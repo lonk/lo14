@@ -169,7 +169,7 @@ fi
 
 # Launch the server on the specified port
 function start_server {
-if ! [[ -z `pgrep -f -x "nc -l -k -p $1"` ]]; then
+if ! [[ -z $(pgrep -f -x "nc -l -k -p $1") ]]; then
 	echo "Server already running on port $1."
 	exit 1
 fi
