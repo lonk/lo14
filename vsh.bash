@@ -1,6 +1,6 @@
 #!/bin/bash
 # Version 09/06/2014 13:00
-
+set -x
 ####################
 #
 #	COMMON PART
@@ -100,7 +100,7 @@ if [[ -z $ping ]]; then
 	echo "Can not access to the server $1:$2"
 	exit 1
 else
-	echo -e "$ping\n";
+	echo -e -n "$ping\n";
 fi
 }
 
@@ -143,8 +143,6 @@ if [[ $1 == '-start' ]]; then
 elif [[ $1 == '-stop' ]]; then
 	stop_server $2
 else
-	rm -f /tmp/serverAnswer.txt
-	touch /tmp/serverAnswer.txt
 	case $1 in
 		'-list')
 			show_list $2 $3;;
@@ -157,7 +155,6 @@ else
 			echo 'Unknown error.'
 			exit 1;;
 	esac
-	rm -f /tmp/serverAnswer.txt
 fi
 }
 
@@ -169,14 +166,14 @@ fi
 
 # Launch the server on the specified port
 function start_server {
-if ! [[ -z $(pgrep -f -x "nc -l -k -p $1") ]]; then
+if ! [[ -z $(pgrep -f -x "nc -lkp $1") ]]; then
 	echo "Server already running on port $1."
 	exit 1
 fi
 echo 'Launching server...'
 rm -f /tmp/serverFifo
 mkfifo /tmp/serverFifo
-(nc -l -k -p $1 < /tmp/serverFifo | interaction > /tmp/serverFifo) &
+nc -lkp $1 < /tmp/serverFifo | interaction > /tmp/serverFifo &
 echo "Server is now listening on port $1."
 }
 
@@ -234,9 +231,9 @@ echo 'Exemple/Test'
 
 # Stop the server according to the specified port
 function stop_server {
-if ! [[ -z `pgrep -f -x "nc -l -k -p $1"` ]]; then
+if ! [[ -z `pgrep -f -x "nc -lkp $1"` ]]; then
 	echo "Stopping server listening on port $1..."
-	pkill -f -x "nc -l -k -p $1"
+	pkill -f -x "nc -lkp $1"
 	rm -f /tmp/serverFifo
 	echo 'Server stopped!'
 else
@@ -252,56 +249,45 @@ fi
 
 # Get and display archives list
 function show_list {
-lineNumber=$(wc -l < /tmp/serverAnswer.txt)
-echo 'show_list' | nc $1 $2 >> /tmp/serverAnswer.txt &
-list=`wait_answer $lineNumber`
+list=$(nc -q 1 $1 $2 <<< show_list)
 echo "Archives present on the server $1:$2 :"
 for archive in $list; do
 	echo $archive
 done
 }
 
-# Wait for the server answer
-function wait_answer {
-line=$(wc -l < /tmp/serverAnswer.txt)
-while [[ $line == $1 ]]; do
-	line=$(wc -l < /tmp/serverAnswer.txt)
-done
-echo "$(tail -1 '/tmp/serverAnswer.txt')"
-}
 
 # Established permanent client connecion to the specified server
 function browse_mode {
-rm -f /tmp/clientFifo
-mkfifo /tmp/clientFifo
-nc $1 $2 < /tmp/clientFifo >> /tmp/serverAnswer.txt &
-browse $3 > /tmp/clientFifo
+# rm -f /tmp/clientFifo
+# mkfifo /tmp/clientFifo
+echo "$(nc -q -1 "$1" "$2" <<< $(browse $3) 2>&1)"
+# nc -q -1 $1 $2 <<< $(browse $3)
+# (nc -q -1 "$1" "$2" > /tmp/clientFifo) <<< $(browse "$3" < /tmp/clientFifo)
+# echo "$(browse $3 < /tmp/clientFifo | nc -q -1 $1 $2 > /tmp/clientFifo)"
+# browse $3 > /tmp/clientFifo
 }
 
 # Browse mode
 function browse {
 file=$1
-console=$(tty)
 current='/'
 while true; do
-	echo -n 'vsh:> ' >> $console
+	# echo -n 'vsh:> ' >> $console
 	read command
 	set -- $command
-	lineNumber=$(wc -l < /tmp/serverAnswer.txt)
 	case $1 in
 		'pwd')
-			echo "$current" > $console;;
+			echo "$current";;
 		'cd')
 			echo "$command $current $file"
-			answer=`wait_answer $lineNumber`
 			if [[ $answer =~ ^/.* ]]; then
 				current=$answer
-			else echo "$answer" > $console
+			else echo "$answer"
 			fi;;
 		*)
 			echo "$command $file"
-			answer=`wait_answer $lineNumber`
-                	echo "$answer" > $console;;
+            echo "$answer";;
 	esac
 done
 }
