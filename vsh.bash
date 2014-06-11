@@ -308,6 +308,6 @@ done
 
 # Basic succession of vsh
 check_arguments $@
-check_config
+# check_config
 execute_command $@
 exit 0
