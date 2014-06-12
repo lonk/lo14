@@ -191,7 +191,8 @@ while read line; do
 		'show_list')
 			echo `ls -p archives | grep -v / | grep '.arch$' | sed 's/.arch$//'`;;
 		'extract')
-			echo `cat archives/$2.arch`;;
+			archive=`cat archives/test1.arch`
+			echo -e -n "$archive\n";;
 		'cd')
 			if [[ $# == 4 ]]; then
 				if [[ `check_directory $2 $3 $4` == '0' ]]; then
@@ -248,9 +249,10 @@ fi
 #
 ####################
 
+
 function extract_mode {
-	archive=$(nc -q 1 $1 $2 <<< "extract $3")
-	echo $archive
+	archive=`echo "extract" | nc -q 1 $1 $2`
+	echo -e -n "$archive\n"
 }
 
 # Get and display archives list
