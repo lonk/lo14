@@ -1,6 +1,6 @@
 #!/bin/bash
 # Version 09/06/2014 13:00
-set -x
+#set -x
 ####################
 #
 #	COMMON PART
@@ -149,8 +149,7 @@ else
 		'-browse')
 			browse_mode $2 $3 $4;;
 		'-extract')
-			echo 'Not implemented yet.'
-			exit 1;;
+			extract_mode $2 $3 $4;;
 		*)
 			echo 'Unknown error.'
 			exit 1;;
@@ -191,6 +190,8 @@ while read line; do
 			fi;;
 		'show_list')
 			echo `ls -p archives | grep -v / | grep '.arch$' | sed 's/.arch$//'`;;
+		'extract')
+			echo `cat archives/$2.arch`;;
 		'cd')
 			if [[ $# == 4 ]]; then
 				if [[ `check_directory $2 $3 $4` == '0' ]]; then
@@ -246,6 +247,11 @@ fi
 #	CLIENT PART
 #
 ####################
+
+function extract_mode {
+	archive=$(nc -q 1 $1 $2 <<< "extract $3")
+	echo $archive
+}
 
 # Get and display archives list
 function show_list {
