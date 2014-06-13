@@ -252,7 +252,57 @@ fi
 
 function extract_mode {
 	archive=`echo "extract" | nc -q 1 $1 $2`
-	echo -e -n "$archive\n"
+	markers=(`echo -e -n "$archive\n" | head -1 | sed -e 's/:/\n/g'`)
+	tree=`echo -e -n "$archive\n" | head -n $((${markers[1]}-1)) | tail -n +${markers[0]}`
+	content=`echo -e -n "$archive\n" | tail -n +${markers[1]}`
+	inDirectory=false
+	currentDirectory="./"
+	while read -r line; do
+		array=(`echo "$line"`)
+
+		if [ ${array[0]} == "@" ]; then
+			inDirectory=false
+		fi
+
+		if [ $inDirectory == true ]; then
+			if [ ${array[1]:0:1} == "d" ]; then
+				mkdir -p "$currentDirectory/${array[0]}"
+			elif [ ${array[1]:0:1} == "-" ]; then
+				rm "$currentDirectory/${array[0]}"
+				touch "$currentDirectory/${array[0]}"
+				count=1
+				( IFS='\n'
+				while read -r cLine; do
+					if [ $count -ge ${array[3]} ]; then
+						if [ $count -le $((${array[3]}+${array[4]}-1)) ]; then
+							echo -e -n "$cLine\n" >> $currentDirectory/${array[0]}
+						fi
+					fi
+					count=$(($count+1))
+				done <<< "$content" )
+			fi
+
+			chmod 000 "$currentDirectory/${array[0]}"
+			for i in {1..3}
+			do
+				chmod u+${array[1]:i:1} "$currentDirectory/${array[0]}"
+			done
+			for i in {4..6}
+			do
+				chmod g+${array[1]:i:1} "$currentDirectory/${array[0]}"
+			done
+			for i in {7..9}
+			do
+				chmod o+${array[1]:i:1} "$currentDirectory/${array[0]}"
+			done
+		fi 
+
+		if [ ${array[0]} == "directory" ]; then
+			inDirectory=true
+			mkdir -p ${array[1]}
+			currentDirectory=${array[1]}
+		fi
+	done <<< "$tree"
 }
 
 # Get and display archives list
