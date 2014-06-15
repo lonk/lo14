@@ -1,6 +1,6 @@
 #!/bin/bash
 # Version 09/06/2014 13:00
-set -x
+#set -x
 ####################
 #
 #	COMMON PART
@@ -192,13 +192,13 @@ while read line; do
 				local current=$3
 				local archive=$4
 			elif [[ $# == 3 ]]; then
-				local target=""
+				local target=''
 				local current=$2
 				local archive=$3
 			else echo 'Wrong argument number.'
 			fi
 			if [[ $# == 4 || $# == 3 ]]; then
-				local path="$(get_full_path $target $current)"
+				local path=$(get_full_path "$target" "$current")
 				if [[ "$(check_path $path $archive)" == true ]]; then
 					echo "$(list_all $path $current $archive)"
 				else echo "Directory $target not found."
@@ -217,13 +217,24 @@ while read line; do
 					fi
 				else
 					local archive=$4
-					local path="$(get_full_path $target $current)"
+					local path=$(get_full_path "$target" "$current")
 					if [[ "$(check_path $path $archive)" == true ]]; then
 						echo "$(sed 's,'"$(get_root_path)"',,' <<< $path)"
 					else echo "Directory $target not found."
 					fi
 				fi
 			else echo 'Wrong argument number.'
+			fi;;
+		'cat')
+			if [[ $# == 4 ]]; then
+				local target=$2
+				local current=$3
+				local archive=$4
+				local path=$(get_full_path '' "$current")
+				lines="$(get_file_lines $path $target $archive)"
+				local start_line=$(cut -d' ' -f1 <<< "$lines")
+				local end_line=$(cut -d' ' -f2 <<< "$lines")
+				echo $(sed -n ${start_line},${end_line}p archives/"$archive".arch)
 			fi;;
 		*)
 			echo 'Unknown command.';;
@@ -238,11 +249,13 @@ echo 'Exemple/Test'
 
 # Return the directory full path : 1 is the target path and 2 the current location
 function get_full_path {
-local root="$(get_root_path)"
-if [[ $1 =~ ^/.* ]]; then
+root=$(get_root_path)
+if [[ -z $1 ]]; then
+	echo "$root$2"
+elif [[ $1 =~ ^/.* ]]; then
 	echo "$root$1"
 elif [[ $2 == '/' ]]; then
-	echo "$root$2$1"
+	echo "$root/$1"
 else echo "$root$2/$1"
 fi
 }
@@ -257,28 +270,57 @@ fi
 
 # 1 is full path, 2 is current path and 3 is archive
 function list_all {
-line=$(grep -n "^directory $1$" archives/"$3".arch | cut -c1)
-line=$((line+1))
+local body=$(head -n 1 archives/"$3".arch)
+local start="$(cut -d':' -f1 <<< "$body")"
+local end="$(cut -d':' -f2 <<< "$body")"
+end=$((end-1))
+line=$(sed -n ${start},${end}p archives/"$3".arch | grep -n "^directory $1$" | cut -d':' -f1)
+line=$((line+start))
 i=0
 while read line; do
 	if [[ $line == "@" ]]; then
 		break
+	else
+		array[i]="$line"
+		i=$((i+1))
 	fi
-	array[i]="$line"
-	i=$((i+1))
 done < <(tail -n "+$line" archives/"$3".arch)
 i=0
 for line in "${array[@]}"; do
 	properties="$(cut -d' ' -f2 <<< "$line")"
-	temp="${properties:0:1}"
-	if [[ $temp == 'd' ]]; then
+	if [[ "${properties:0:1}" == 'd' ]]; then
 		result[i]="$(cut -d' ' -f1 <<< "$line")/"
+	elif ! [[ -z "$(grep 'x' <<< "$properties")" ]]; then
+		result[i]="$(cut -d' ' -f1 <<< "$line")*"
 	else result[i]="$(cut -d' ' -f1 <<< "$line")"
 	fi
 	i=$((i+1))
 done
-
 echo "${result[@]}"
+}
+
+# 1 is the full path and 2 is the target file and 3 the archive name
+function get_file_lines {
+local body=$(head -n 1 archives/"$3".arch)
+local start="$(cut -d':' -f1 <<< "$body")"
+local end="$(cut -d':' -f2 <<< "$body")"
+end=$((end-1))
+line=$(sed -n ${start},${end}p archives/"$3".arch | grep -n "^directory $1$" | cut -d':' -f1)
+line=$((line+start))
+result=false
+while read line; do
+	if [[ "$(cut -d' ' -f1 <<< "$line")" == "$2" ]]; then
+		break
+	fi
+done < <(tail -n "+$line" archives/"$3".arch)
+properties="$(cut -d' ' -f2 <<< "$line")"
+if [[ "${properties:0:1}" != 'd' ]]; then
+	start_line=$(cut -d' ' -f4 <<< "$line")
+	start_line=$((start_line+end))
+	end_line=$(cut -d' ' -f5 <<< "$line")
+	end_line=$((end_line+end))
+fi
+echo "$start_line $end_line"
 }
 
 # Stop the server according to the specified port
@@ -380,13 +422,19 @@ while true; do
 		'pwd')
 			echo "$current";;
 		'ls')
-			echo "$(send_msg "$command $current $file")";;
+			msg=$(send_msg "$command $current $file")
+			if ! [[ -z $msg ]]; then
+				echo "$msg"
+			fi;;
 		'cd')
 			answer=$(send_msg "$command $current $file")
 			if [[ $answer =~ ^/.* ]]; then
 				current=$answer
 			else echo "$answer"
 			fi;;
+		'cat')
+			answer=$(send_msg "$command $current $file")
+			echo "$answer";;
 		*)
 			answer=$(send_msg "$command $current $file")
             		echo "$answer";;
