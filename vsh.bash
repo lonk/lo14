@@ -37,7 +37,7 @@ fi
 if [[ $1 == '-list' || $1 == '-browse' || $1 == '-extract' ]]; then
 	check_ip $2
 	check_port $3
-	ping $2 $3
+	ping_server $2 $3
 else
 	check_port $2
 fi
@@ -53,7 +53,7 @@ fi
 
 # Display available options
 function display_options {
-echo 'Usage : vsh [-start port] [-stop port] [-list ip_address port] [-browse ip_address port archive_name] [-extract ip_address port archive_name]'
+echo 'Usage : vsh [-start port] [-stop port] [-list destination port] [-browse destination port archive_name] [-extract destination port archive_name]'
 }
 
 # Check if the argument is a valid ip address
@@ -94,8 +94,8 @@ fi
 }
 
 # Check if the specified server is online and get the welcome message
-function ping {
-ping=`echo "ping" | nc -q 1 $1 $2`
+function ping_server {
+ping=$(send_msg 'ping')
 if [[ -z $ping ]]; then
 	echo "Can not access to the server $1:$2"
 	exit 1
@@ -106,34 +106,36 @@ fi
 
 # Check if the file is present on the specified server
 function check_file {
-answer=$(echo "check_file $3" | nc -q 1 $1 $2)
+answer=$(send_msg "check_file $3")
 if [[ $answer == 'false' ]]; then
 	echo -e "File '$3' is not present on the server.\nType 'vsh -list $1 $2' to display archives present on the server."
 	exit 1
 fi
 }
 
-# Check if netcat-openbsd is installed
+# Check if nmap which inlude Ncat is installed
 function check_config {
-packageName='netcat-openbsd'
-status=$(dpkg-query -l $packageName | grep $packageName | sed 's/ .*//')
-if [[ $status != 'ii' ]]
-then
-	echo -e "vsh required $packageName to be installed\nDo you want to install it? (yes/no)"
-	answer=''
-	while [[ $answer != 'yes' && $answer != 'no' ]]
-	do
-		read answer
-		case $answer in
-			'yes')
-				sudo apt-get install $packageName;;
-			'no')
-				exit 1;;
-			*)
-				echo -n 'Please, type yes or no : ';;
-		esac
-	done
-fi
+list='nmap netcat-openbsd'
+for package in $list; do
+	status=$(dpkg-query -l $package | grep $package | sed 's/ .*//')
+	if [[ $status != 'ii' ]]
+	then
+		echo -e "vsh required $package to be installed\nDo you want to install it? (yes/no)"
+		answer=''
+		while [[ $answer != 'yes' && $answer != 'no' ]]
+		do
+			read answer
+			case $answer in
+				'yes')
+					sudo dpkg -i $package;;
+				'no')
+					exit 1;;
+				*)
+					echo -n 'Please, type yes or no : ';;
+			esac
+		done
+	fi
+done
 }
 
 # Execute command
@@ -151,7 +153,7 @@ else
 		'-extract')
 			extract_mode $2 $3 $4;;
 		*)
-			echo 'Unknown error.'
+			echo 'Unknown error!'
 			exit 1;;
 	esac
 fi
@@ -165,40 +167,42 @@ fi
 
 # Launch the server on the specified port
 function start_server {
-if ! [[ -z $(pgrep -f -x "nc -lkp $1") ]]; then
+if ! [[ -z $(pgrep -f -x "$server") ]]; then
 	echo "Server already running on port $1."
 	exit 1
 fi
 echo 'Launching server...'
 rm -f /tmp/serverFifo
-mkfifo /tmp/serverFifo
-nc -lkp $1 < /tmp/serverFifo | interaction > /tmp/serverFifo &
+mknod /tmp/serverFifo p
+$server 0</tmp/serverFifo | handle_msg 1>/tmp/serverFifo
 echo "Server is now listening on port $1."
 }
 
 # Given answer according to the received command
-function interaction {
+function handle_msg {
 while read line; do
 	set -- $line
 	case $1 in
 		'ping')
 			echo 'Welcome home!';;
 		'check_file')
-			if [[ -f archives/$2.arch ]]; then
+			if [[ -e archives/"$2".arch ]]; then
 				echo true
 			else echo false
 			fi;;
 		'show_list')
-			echo `ls -p archives | grep -v / | grep '.arch$' | sed 's/.arch$//'`;;
+			echo "$(ls -p archives | grep -v / | grep '.arch$' | sed 's/.arch$//')";;
 		'extract')
 			archive=`cat archives/test1.arch`
 			echo -e -n "$archive\n";;
 		'cd')
 			if [[ $# == 4 ]]; then
-				if [[ `check_directory $2 $3 $4` == '0' ]]; then
-					if [[ $3 == '/' ]]; then
-						echo "$3$2"
-					else echo "$3/$2"
+				local file=$4
+				local current=$3
+				if [[ "$(check_directory $2 $current $file)" == '1' ]]; then
+					if [[ $current == '/' ]]; then
+						echo "$current$2"
+					else echo "$current/$2"
 					fi
 				else echo "Directory $2 not found."
 				fi
@@ -212,14 +216,14 @@ done
 
 # Check if a directory exist
 function check_directory {
-root=`get_root_dir $3`
+root="$(get_root_dir $3)"
 if [[ $2 == '/' ]]; then
-	if [[ `cat archives/$3.arch | grep '^directory ' | grep $root$2$1` != '' ]]; then
+	if [[ -z $(cat archives/"$3".arch | grep '^directory ' | grep "$root$2$1") ]]; then
 		echo '0'
 	else echo '1'
 	fi
 else
-	if [[ `cat archives/$3.arch | grep '^directory ' | grep $root$2/$1$` != '' ]]; then
+	if [[ -z $(cat archives/$3.arch | grep '^directory ' | grep "$root$2/$1") ]]; then
 		echo '0'
 	else echo '1'
 	fi
@@ -233,9 +237,9 @@ echo 'Exemple/Test'
 
 # Stop the server according to the specified port
 function stop_server {
-if ! [[ -z `pgrep -f -x "nc -lkp $1"` ]]; then
+if ! [[ -z $(pgrep -f -x "$server") ]]; then
 	echo "Stopping server listening on port $1..."
-	pkill -f -x "nc -lkp $1"
+	pkill -f -x "$server"
 	rm -f /tmp/serverFifo
 	echo 'Server stopped!'
 else
@@ -249,7 +253,12 @@ fi
 #
 ####################
 
+# Send message to the server and return the response.
+function send_msg {
+echo "$(nc.openbsd -q 1 $destination $port <<< $1)"
+}
 
+#
 function extract_mode {
 	archive=`echo "extract" | nc -q 1 $1 $2`
 	markers=(`echo -e -n "$archive\n" | head -1 | sed -e 's/:/\n/g'`)
@@ -307,51 +316,50 @@ function extract_mode {
 
 # Get and display archives list
 function show_list {
-list=$(nc -q 1 $1 $2 <<< show_list)
+list=$(send_msg 'show_list')
 echo "Archives present on the server $1:$2 :"
 for archive in $list; do
-	echo $archive
+	echo  $archive
 done
 }
 
-
-# Established permanent client connecion to the specified server
-function browse_mode {
-# rm -f /tmp/clientFifo
-# mkfifo /tmp/clientFifo
-echo "$(nc -q -1 "$1" "$2" <<< $(browse $3) 2>&1)"
-# nc -q -1 $1 $2 <<< $(browse $3)
-# (nc -q -1 "$1" "$2" > /tmp/clientFifo) <<< $(browse "$3" < /tmp/clientFifo)
-# echo "$(browse $3 < /tmp/clientFifo | nc -q -1 $1 $2 > /tmp/clientFifo)"
-# browse $3 > /tmp/clientFifo
-}
-
 # Browse mode
-function browse {
-file=$1
+function browse_mode {
 current='/'
 while true; do
-	# echo -n 'vsh:> ' >> $console
+	echo -n "vsh:$current\$ "
 	read command
 	set -- $command
 	case $1 in
 		'pwd')
 			echo "$current";;
 		'cd')
-			echo "$command $current $file"
+			answer=$(send_msg "$command $current $file")
 			if [[ $answer =~ ^/.* ]]; then
 				current=$answer
 			else echo "$answer"
 			fi;;
 		*)
-			echo "$command $file"
-            echo "$answer";;
+			answer=$(send_msg "$command $current $file")
+            		echo "$answer";;
 	esac
 done
 }
 
-# Basic succession of vsh
+# Declaration of global variables to make life easier
+if [[ $1 == "-list" || $1 == "-browse" || $1 == "-extract" ]]; then
+	destination="$2"
+	port="$3"
+	file="$4"
+elif [[ $1 == "-start" || $1 == "-stop" ]]; then
+	server="ncat -lk localhost $2"
+fi
+
+# Check everything
 check_arguments $@
-# check_config
+check_config
+
+# Let's go
 execute_command $@
+
 exit 0
