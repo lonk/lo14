@@ -205,10 +205,12 @@ while read line; do
 				fi
 			fi;;			
 		'cd')
-			if [[ $# == 4 ]]; then
+			if [[ $# == 5 ]]; then
 				local target=$(remove_last_slash "$2")
 				local current=$3
-				if [[ $target == ".." ]]; then
+				if [[ $target == "-" ]]; then
+					echo "$5"
+				elif [[ $target == ".." ]]; then
 					base="$(basename $current)"
 					base="$(sed 's,'"/$base"',,' <<< $current)"
 					if [[ -z $base ]]; then
@@ -227,18 +229,23 @@ while read line; do
 			fi;;
 		'cat')
 			if [[ $# == 4 ]]; then
-				local target=$(remove_last_slash "$2")
-				local current=$3
-				local archive=$4
-				local base=$(basename $target)
-				local path=$(get_full_path "$(sed 's/\/'"$base"'//' <<< $target)" "$current" "$archive")
-				lines="$(get_file_lines $path $base $archive)"
-				if [[ $? == 0 ]]; then
-					local start_line=$(cut -d' ' -f1 <<< "$lines")
-					local end_line=$(cut -d' ' -f2 <<< "$lines")
-					echo $(sed -n ${start_line},${end_line}p archives/"$archive".arch) > /dev/tty
-					echo $(sed -n ${start_line},${end_line}p archives/"$archive".arch)
-				else echo "File $base not found."
+				local target="$2"
+				local current="$3"
+				local archive="$4"
+				local base=${target##*/}
+				if ! [[ -z $base ]]; then
+					local path=$(get_full_path "$(sed 's/\/'"$base"'//' <<< $target)" "$current" "$archive")
+					lines="$(get_file_lines $path $base $archive)"
+					code=$?
+					if [[ $code == 0 ]]; then
+						local start_line=$(cut -d' ' -f1 <<< "$lines")
+						local end_line=$(cut -d' ' -f2 <<< "$lines")
+						echo $(sed -n ${start_line},${end_line}p archives/"$archive".arch)
+					elif [[ $code == 2 ]]; then
+						echo ''
+					else echo "File $base not found."
+					fi
+				else echo "$target: Not a directory"
 				fi
 			else echo 'Wrong argument number.'
 			fi;;
@@ -300,7 +307,7 @@ else echo true
 fi
 }
 
-# 1 is full path, 2 is current path and 3 is archive
+# 1 is the full path, 2 is the current path and 3 is the archive name
 function list_all {
 local body=$(head -n 1 archives/"$3".arch)
 local start="$(cut -d':' -f1 <<< "$body")"
@@ -331,7 +338,7 @@ done
 echo "${result[@]}"
 }
 
-# 1 is the full path and 2 is the target file and 3 the archive name
+# 1 is the full path and 2 is the target file and 3 is the archive name
 function get_file_lines {
 local body=$(head -n 1 archives/"$3".arch)
 local start="$(cut -d':' -f1 <<< "$body")"
@@ -358,6 +365,8 @@ if [[ "${properties:0:1}" != 'd' ]]; then
 fi
 if [[ -z $lines ]]; then
 	exit 1
+elif [[ $length == 0 ]]; then
+	exit 2
 else echo "$lines"
 fi
 exit 0
@@ -453,6 +462,7 @@ done
 
 # Browse mode
 function browse_mode {
+previous='/'
 current='/'
 while true; do
 	echo -n "vsh:$current\$ "
@@ -462,19 +472,22 @@ while true; do
 		'pwd')
 			echo "$current";;
 		'ls')
-			msg=$(send_msg "$command $current $file")
-			if ! [[ -z $msg ]]; then
-				echo "$msg"
+			answer=$(send_msg "$command $current $file")
+			if ! [[ -z $answer ]]; then
+				echo "$answer"
 			fi;;
 		'cd')
-			answer=$(send_msg "$command $current $file")
+			answer=$(send_msg "$command $current $file $previous")
 			if [[ $answer =~ ^/.* ]]; then
+				previous=$current
 				current=$answer
 			else echo "$answer"
 			fi;;
 		'cat')
 			answer=$(send_msg "$command $current $file")
-			echo "$answer";;
+			if ! [[ -z $answer ]]; then
+				echo "$answer"
+			fi;;
 		*)
 			answer=$(send_msg "$command $current $file")
             		echo "$answer";;
