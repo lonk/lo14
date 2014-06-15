@@ -1,6 +1,6 @@
 #!/bin/bash
 # Version 09/06/2014 13:00
-set -x
+#set -x
 ####################
 #
 #	COMMON PART
