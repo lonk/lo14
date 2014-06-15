@@ -1,6 +1,6 @@
 #!/bin/bash
 # Version 09/06/2014 13:00
-#set -x
+set -x
 ####################
 #
 #	COMMON PART
@@ -186,18 +186,44 @@ while read line; do
 		'extract')
 			archive=`cat archives/test1.arch`
 			echo -e -n "$archive\n";;
+		'ls')
+			if [[ $# == 4 ]]; then
+				local target=$2
+				local current=$3
+				local archive=$4
+			elif [[ $# == 3 ]]; then
+				local target=""
+				local current=$2
+				local archive=$3
+			else echo 'Wrong argument number.'
+			fi
+			if [[ $# == 4 || $# == 3 ]]; then
+				local path="$(get_full_path $target $current)"
+				if [[ "$(check_path $path $archive)" == true ]]; then
+					echo "$(list_all $path $current $archive)"
+				else echo "Directory $target not found."
+				fi
+			fi;;			
 		'cd')
 			if [[ $# == 4 ]]; then
-				local file=$4
+				local target=$2
 				local current=$3
-				if [[ "$(check_directory $2 $current $file)" == '1' ]]; then
-					if [[ $current == '/' ]]; then
-						echo "$current$2"
-					else echo "$current/$2"
+				if [[ $target == ".." ]]; then
+					base="$(basename $current)"
+					base="$(sed 's,'"/$base"',,' <<< $current)"
+					if [[ -z $base ]]; then
+						echo '/'
+					else echo "$base"
 					fi
-				else echo "Directory $2 not found."
+				else
+					local archive=$4
+					local path="$(get_full_path $target $current)"
+					if [[ "$(check_path $path $archive)" == true ]]; then
+						echo "$(sed 's,'"$(get_root_path)"',,' <<< $path)"
+					else echo "Directory $target not found."
+					fi
 				fi
-			else echo 'Invalid argument.'
+			else echo 'Wrong argument number.'
 			fi;;
 		*)
 			echo 'Unknown command.';;
@@ -205,25 +231,54 @@ while read line; do
 done
 }
 
-# Check if a directory exist
-function check_directory {
-root="$(get_root_dir $3)"
-if [[ $2 == '/' ]]; then
-	if [[ -z $(cat archives/"$3".arch | grep '^directory ' | grep "$root$2$1") ]]; then
-		echo '0'
-	else echo '1'
-	fi
-else
-	if [[ -z $(cat archives/$3.arch | grep '^directory ' | grep "$root$2/$1") ]]; then
-		echo '0'
-	else echo '1'
-	fi
+# Todo : get the root directory of the file
+function get_root_path {
+echo 'Exemple/Test'
+}
+
+# Return the directory full path : 1 is the target path and 2 the current location
+function get_full_path {
+local root="$(get_root_path)"
+if [[ $1 =~ ^/.* ]]; then
+	echo "$root$1"
+elif [[ $2 == '/' ]]; then
+	echo "$root$2$1"
+else echo "$root$2/$1"
 fi
 }
 
-# Todo : get the root directory of the file
-function get_root_dir {
-echo 'Exemple/Test'
+# Check if the directory exist : 1 is the directory full path and 2 the archive name
+function check_path {
+if [[ -z $(cat archives/"$2".arch | grep "^directory $1$") ]]; then
+	echo false
+else echo true
+fi
+}
+
+# 1 is full path, 2 is current path and 3 is archive
+function list_all {
+line=$(grep -n "^directory $1$" archives/"$3".arch | cut -c1)
+line=$((line+1))
+i=0
+while read line; do
+	if [[ $line == "@" ]]; then
+		break
+	fi
+	array[i]="$line"
+	i=$((i+1))
+done < <(tail -n "+$line" archives/"$3".arch)
+i=0
+for line in "${array[@]}"; do
+	properties="$(cut -d' ' -f2 <<< "$line")"
+	temp="${properties:0:1}"
+	if [[ $temp == 'd' ]]; then
+		result[i]="$(cut -d' ' -f1 <<< "$line")/"
+	else result[i]="$(cut -d' ' -f1 <<< "$line")"
+	fi
+	i=$((i+1))
+done
+
+echo "${result[@]}"
 }
 
 # Stop the server according to the specified port
@@ -324,6 +379,8 @@ while true; do
 	case $1 in
 		'pwd')
 			echo "$current";;
+		'ls')
+			echo "$(send_msg "$command $current $file")";;
 		'cd')
 			answer=$(send_msg "$command $current $file")
 			if [[ $answer =~ ^/.* ]]; then
