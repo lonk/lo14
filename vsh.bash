@@ -113,29 +113,20 @@ if [[ $answer == 'false' ]]; then
 fi
 }
 
-# Check if nmap which inlude Ncat is installed
+# Check if required packages are installed
 function check_config {
 list='nmap netcat-openbsd'
 for package in $list; do
 	status=$(dpkg-query -l $package | grep $package | sed 's/ .*//')
 	if [[ $status != 'ii' ]]
 	then
-		echo -e "vsh required $package to be installed\nDo you want to install it? (yes/no)"
-		answer=''
-		while [[ $answer != 'yes' && $answer != 'no' ]]
-		do
-			read answer
-			case $answer in
-				'yes')
-					sudo dpkg -i $package;;
-				'no')
-					exit 1;;
-				*)
-					echo -n 'Please, type yes or no : ';;
-			esac
-		done
+		result="$result $list"
 	fi
 done
+if ! [[ -z $result ]]; then
+	echo "vsh required these packages to be installed :$result"
+	exit 1
+fi
 }
 
 # Execute command
