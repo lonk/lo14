@@ -188,7 +188,7 @@ while read line; do
 			echo -e -n "$archive\n";;
 		'ls')
 			if [[ $# == 4 ]]; then
-				local target=$2
+				local target=$(remove_last_slash "$2")
 				local current=$3
 				local archive=$4
 			elif [[ $# == 3 ]]; then
@@ -198,7 +198,7 @@ while read line; do
 			else echo 'Wrong argument number.'
 			fi
 			if [[ $# == 4 || $# == 3 ]]; then
-				local path=$(get_full_path "$target" "$current")
+				local path=$(get_full_path "$target" "$current" "$archive")
 				if [[ "$(check_path $path $archive)" == true ]]; then
 					echo "$(list_all $path $current $archive)"
 				else echo "Directory $target not found."
@@ -206,7 +206,7 @@ while read line; do
 			fi;;			
 		'cd')
 			if [[ $# == 4 ]]; then
-				local target=$2
+				local target=$(remove_last_slash "$2")
 				local current=$3
 				if [[ $target == ".." ]]; then
 					base="$(basename $current)"
@@ -217,9 +217,9 @@ while read line; do
 					fi
 				else
 					local archive=$4
-					local path=$(get_full_path "$target" "$current")
+					local path=$(get_full_path "$target" "$current" "$archive")
 					if [[ "$(check_path $path $archive)" == true ]]; then
-						echo "$(sed 's,'"$(get_root_path)"',,' <<< $path)"
+						echo "$(sed 's,'"$(get_root_path $archive)"',,' <<< $path)"
 					else echo "Directory $target not found."
 					fi
 				fi
@@ -227,18 +227,20 @@ while read line; do
 			fi;;
 		'cat')
 			if [[ $# == 4 ]]; then
-				local target=$2
+				local target=$(remove_last_slash "$2")
 				local current=$3
 				local archive=$4
 				local base=$(basename $target)
-				local path=$(get_full_path "$(sed 's/\/'"$base"'//' <<< $target)" "$current")
+				local path=$(get_full_path "$(sed 's/\/'"$base"'//' <<< $target)" "$current" "$archive")
 				lines="$(get_file_lines $path $base $archive)"
 				if [[ $? == 0 ]]; then
 					local start_line=$(cut -d' ' -f1 <<< "$lines")
 					local end_line=$(cut -d' ' -f2 <<< "$lines")
+					echo $(sed -n ${start_line},${end_line}p archives/"$archive".arch) > /dev/tty
 					echo $(sed -n ${start_line},${end_line}p archives/"$archive".arch)
-				else echo $lines
+				else echo "File $base not found."
 				fi
+			else echo 'Wrong argument number.'
 			fi;;
 		*)
 			echo 'Unknown command.';;
@@ -246,14 +248,36 @@ while read line; do
 done
 }
 
-# Todo : get the root directory of the file
-function get_root_path {
-echo 'Exemple/Test'
+# Ensure that there is no slash at the end of path by removing them
+function remove_last_slash {
+length="${#1}"
+length=$((length-1))
+if [[ "${1:length:1}" == '/' ]]; then
+	echo "${1%?}"
+else echo $1
+fi
 }
 
-# Return the directory full path : 1 is the target path and 2 the current location
+# Get the full root path of the archive
+function get_root_path {
+local body=$(head -n 1 archives/"$1".arch)
+local start="$(cut -d':' -f1 <<< "$body")"
+local end="$(cut -d':' -f2 <<< "$body")"
+end=$((end-1))
+list=($(sed -n ${start},${end}p archives/"$1".arch | grep "^directory" | sed 's/directory //' ))
+result=${list[0]}
+i=0
+for element in "${list[@]}"; do
+	if [[ "${#element}" < "${#result}" ]]; then
+		result=$element
+	fi
+done
+echo "$(remove_last_slash "$result")"
+}
+
+# Return the directory full path : 1 is the target path, 2 the current location and 3 the archive name
 function get_full_path {
-root=$(get_root_path)
+root=$(get_root_path $3)
 if [[ -z $1 ]]; then
 	echo "$root$2"
 elif [[ $1 =~ ^/.* ]]; then
@@ -266,7 +290,11 @@ fi
 
 # Check if the directory exist : 1 is the directory full path and 2 the archive name
 function check_path {
-if [[ -z $(cat archives/"$2".arch | grep "^directory $1$") ]]; then
+local body=$(head -n 1 archives/"$2".arch)
+local start="$(cut -d':' -f1 <<< "$body")"
+local end="$(cut -d':' -f2 <<< "$body")"
+end=$((end-1))
+if [[ -z $(sed -n ${start},${end}p archives/"$2".arch | grep "^directory $1$") ]]; then
 	echo false
 else echo true
 fi
@@ -315,6 +343,8 @@ result=false
 while read line; do
 	if [[ "$(cut -d' ' -f1 <<< "$line")" == "$2" ]]; then
 		break
+	elif [[ "$line" == '@' ]]; then
+		exit 1
 	fi
 done < <(tail -n "+$line" archives/"$3".arch)
 properties="$(cut -d' ' -f2 <<< "$line")"
@@ -327,7 +357,6 @@ if [[ "${properties:0:1}" != 'd' ]]; then
 	lines="$start_line $end_line"
 fi
 if [[ -z $lines ]]; then
-	echo "File $2 not found."
 	exit 1
 else echo "$lines"
 fi
