@@ -174,7 +174,7 @@ fi
 echo 'Launching server...'
 rm -f /tmp/serverFifo
 mknod /tmp/serverFifo p
-$server 0</tmp/serverFifo | handle_msg 1>/tmp/serverFifo
+$server 0</tmp/serverFifo | handle_msg 1>/tmp/serverFifo &
 echo "Server is now listening on port $1."
 }
 
