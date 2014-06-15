@@ -1,6 +1,6 @@
 #!/bin/bash
 # Version 09/06/2014 13:00
-#set -x
+set -x
 ####################
 #
 #	COMMON PART
@@ -230,11 +230,15 @@ while read line; do
 				local target=$2
 				local current=$3
 				local archive=$4
-				local path=$(get_full_path '' "$current")
-				lines="$(get_file_lines $path $target $archive)"
-				local start_line=$(cut -d' ' -f1 <<< "$lines")
-				local end_line=$(cut -d' ' -f2 <<< "$lines")
-				echo $(sed -n ${start_line},${end_line}p archives/"$archive".arch)
+				local base=$(basename $target)
+				local path=$(get_full_path "$(sed 's/\/'"$base"'//' <<< $target)" "$current")
+				lines="$(get_file_lines $path $base $archive)"
+				if [[ $? == 0 ]]; then
+					local start_line=$(cut -d' ' -f1 <<< "$lines")
+					local end_line=$(cut -d' ' -f2 <<< "$lines")
+					echo $(sed -n ${start_line},${end_line}p archives/"$archive".arch)
+				else echo $lines
+				fi
 			fi;;
 		*)
 			echo 'Unknown command.';;
@@ -314,13 +318,20 @@ while read line; do
 	fi
 done < <(tail -n "+$line" archives/"$3".arch)
 properties="$(cut -d' ' -f2 <<< "$line")"
+lines=""
 if [[ "${properties:0:1}" != 'd' ]]; then
 	start_line=$(cut -d' ' -f4 <<< "$line")
 	start_line=$((start_line+end))
-	end_line=$(cut -d' ' -f5 <<< "$line")
-	end_line=$((end_line+end))
+	length=$(cut -d' ' -f5 <<< "$line")
+	end_line=$((start_line+length-1))
+	lines="$start_line $end_line"
 fi
-echo "$start_line $end_line"
+if [[ -z $lines ]]; then
+	echo "File $2 not found."
+	exit 1
+else echo "$lines"
+fi
+exit 0
 }
 
 # Stop the server according to the specified port
