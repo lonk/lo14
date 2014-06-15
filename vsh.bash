@@ -359,7 +359,7 @@ echo "$(nc.openbsd -q 1 $destination $port <<< $1)"
 
 #
 function extract_mode {
-	archive=`echo "extract" | nc -q 1 $1 $2`
+	archive=$(send_msg 'extract')
 	markers=(`echo -e -n "$archive\n" | head -1 | sed -e 's/:/\n/g'`)
 	tree=`echo -e -n "$archive\n" | head -n $((${markers[1]}-1)) | tail -n +${markers[0]}`
 	content=`echo -e -n "$archive\n" | tail -n +${markers[1]}`
