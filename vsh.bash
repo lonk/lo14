@@ -4,36 +4,34 @@
 ####################
 #
 #	COMMON PART
-#	Description : check arguments, syntax, config and finally execute the command
+#	Description : check arguments syntax, config and finally execute the command
 #
 ####################
 
-# Check syntax of the arguments
+# Check syntax of the arguments (1:option,2:ip/port,3:port,4:archive_name)
 function check_arguments {
-	if [[ $1 == '--help' && $# != 1 ]]; then
+	# check primary option
+	if [[ $1 == '--help' || $1 == '-help' || $1 == '-h' ]]; then
+		display_usage
+		exit 0
+	elif [[ ($1 == '-start' || $1 == '-stop') && $# -ne 2 ]]; then
 		echo 'Invalid number of arguments.'
-		display_options
-		exit 1
-	elif [[ ($1 == '-start' || $1 == '-stop') && $# != 2 ]]; then
-		echo 'Invalid number of arguments.'
-		display_options
+		display_usage
 		exit 1
 	elif [[ $1 == '-list' && $# != 3 ]]; then
 		echo 'Invalid number of arguments.'
-		display_options
+		display_usage
 		exit 1
-	elif [[ ($1 == '-browse' || $1 == '-extract') && ($# < 3 || $# >4) ]]; then
+	elif [[ ($1 == '-browse' || $1 == '-extract') && ($# -lt 3 || $# -gt 4) ]]; then
 		echo 'Invalid number of arguments.'
-		display_options
+		display_usage
 		exit 1
-	elif [[ $1 == '--help' ]]; then
-		display_options
-		exit 0
-	elif [[ $1 != '--help' && $1 != '-start' && $1 != '-stop' && $1 != '-list' && $1 != '-browse' && $1 != '-extract' ]]; then
+	elif [[ $1 != '-start' && $1 != '-stop' && $1 != '-list' && $1 != '-browse' && $1 != '-extract' ]]; then
 		echo 'Invalid option.'
-		display_options
+		display_usage
 		exit 1
 	fi
+	# check arguments syntax
 	if [[ $1 == '-list' || $1 == '-browse' || $1 == '-extract' ]]; then
 		check_ip $2
 		check_port $3
@@ -41,53 +39,51 @@ function check_arguments {
 	else
 		check_port $2
 	fi
+	# check if a file is specified and if it is available on the server
 	if [[ $1 == '-browse' || $1 == '-extract' ]]; then
 		if [[ -z $4 ]]; then
 			echo -e "You should specify the archive name.\nType 'vsh -list $2 $3' to display archives present on the server."
 			exit 1
 		else
-			check_file $2 $3 $4
+			find_archive $2 $3 $4
 		fi
 	fi
 }
 
-# Display available options
-function display_options {
+# Display command usage
+function display_usage {
 	echo 'Usage : vsh [-start port] [-stop port] [-list destination port] [-browse destination port archive_name] [-extract destination port archive_name]'
 }
 
-# Check if the argument is a valid ip address
+# Check if the parameter is a valid ip address
 function check_ip {
 	if ! [[ $1 == 'localhost' ]]; then
-		if [ `echo $1 | grep -o '\.' | wc -l` -ne 3 ]; then
-	    		echo "Parameter '$1' does not look like an IP Address."
+		if [[ $(grep -o '\.' <<< $1 | wc -l) -ne 3 ]]; then
+	    		echo "Parameter '$1' does not look like an IP address."
 	    		exit 1
 		fi
-		if [ `echo $1 | tr '.' ' ' | wc -w` -ne 4 ]; then
-	    		echo "Parameter '$1' does not look like an IP Address."
+		if [[ $(tr '.' ' ' <<< $1 | wc -w) -ne 4 ]]; then
+	    		echo "Parameter '$1' does not look like an IP address."
 	    		exit 1
 		fi
-		for OCTET in `echo $1 | tr '.' ' '`; do
+		for OCTET in $(tr '.' ' ' <<< $1); do
 	    		if ! [[ $OCTET =~ ^[0-9]+$ ]]; then
-				echo "Parameter '$1' does not look like an IP Address."
+				echo "Parameter '$1' does not look like an IP address."
 				exit 1
 	    		fi
 		done
-		for OCTET in `echo $1 | tr '.' ' '`; do
+		for OCTET in $(tr '.' ' ' <<< $1); do
 	    		if [[ $OCTET -lt 0 || $OCTET -gt 255 ]]; then
-				echo "Parameter '$1' does not look like in IP Address (octet '$OCTET' is not in range 0-255)."
+				echo "Parameter '$1' does not look like an IP address (octet '$OCTET' is not in range 0-255)."
 				exit 1
 	    		fi
 		done
 	fi
 }
 
-# Check if the argument is a valid port number
+# Check if the parameter is a valid port number
 function check_port {
-	if [[ -z $1 ]]; then
-		echo 'You should specify a port number.'
-		exit 1
-	elif ! [[ $1 =~ ^[0-9]+$ ]]; then
+	if ! [[ $1 =~ ^[0-9]+$ ]]; then
 		echo "Parameter '$1' does not look like a port."
 		exit 1
 	fi
@@ -97,16 +93,16 @@ function check_port {
 function ping_server {
 	ping=$(send_msg 'ping')
 	if [[ -z $ping ]]; then
-		echo "Can not access to the server $1:$2"
+		echo "Could not access to the server $1:$2"
 		exit 1
 	else
 		echo -e -n "$ping\n";
 	fi
 }
 
-# Check if the file is present on the specified server
-function check_file {
-	answer=$(send_msg "check_file $3")
+# Check if the file is present on the specified server (1:ip,2:port,3:archive_name)
+function find_archive {
+	answer=$(send_msg "find_archive $3")
 	if [[ $answer == 'false' ]]; then
 		echo -e "File '$3' is not present on the server.\nType 'vsh -list $1 $2' to display archives present on the server."
 		exit 1
@@ -176,7 +172,7 @@ function handle_msg {
 		case $1 in
 			'ping')
 				echo 'Welcome home!';;
-			'check_file')
+			'find_archive')
 				if [[ -e archives/"$2".arch ]]; then
 					echo true
 				else echo false
