@@ -110,7 +110,7 @@ function handle_msg {
 							local previousLine=""
 							local linesToDelete=()
 							while read -r line; do
-								local array=(`echo "$line"`)
+								local array=($(echo "$line"))
 								if [[ ${array[0]} == 'directory' ]]; then
 									removeDirectory=${array[1]}
 									if [[ "$(is_deletable "$path" "${array[1]}")" == true ]]; then
@@ -183,11 +183,11 @@ function is_deletable {
 function remove_file {
 	lines=($(get_file_lines "$1" "$2" "$3"))
 	archive=$(cat "$ARCHIVE/$3.arch")
-	markers=(`echo -e -n "$archive\n" | head -1 | sed -e 's/:/\n/g'`)
+	markers=($(echo -e -n "$archive\n" | head -1 | sed -e 's/:/\n/g'))
 	tree=`echo -e -n "$archive\n" | head -n $((${markers[1]}-1)) | tail -n +$((${lines[2]}+1))`
 	if [[ $((${lines[1]}-${lines[0]})) -ne 0 ]]; then
 		while read -r line; do
-			array=(`echo "$line"`)
+			array=$((echo "$line"))
 			if [[ ${#array[@]} -eq 5 ]]; then
 				array[3]=$((${array[3]}-(${lines[1]}-${lines[0]}+1)))
 				newLine=$( IFS=" " ; echo "${array[*]}" )
@@ -201,7 +201,7 @@ function remove_file {
 
 function update_markers {
 	archive=$(cat "archives/$2.arch")
-	markers=(`echo -e -n "$archive\n" | head -1 | sed -e 's/:/\n/g'`)
+	markers=$((echo -e -n "$archive\n" | head -1 | sed -e 's/:/\n/g'))
 	sed -i "s/${markers[0]}:${markers[1]}/${markers[0]}:$((${markers[1]}-$1))/g" archives/$2.arch
 }
 

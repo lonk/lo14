@@ -85,13 +85,13 @@ function browse_mode {
 # extract the specified archive on the client computer
 function extract_mode {
 	archive=$(send_msg 'extract')
-	markers=(`echo -e -n "$archive\n" | head -1 | sed -e 's/:/\n/g'`)
+	markers=($(echo -e -n "$archive\n" | head -1 | sed -e 's/:/\n/g'))
 	tree=`echo -e -n "$archive\n" | head -n $((${markers[1]}-1)) | tail -n +${markers[0]}`
 	content=`echo -e -n "$archive\n" | tail -n +${markers[1]}`
 	inDirectory=false
 	currentDirectory="./"
 	while read -r line; do
-		array=(`echo "$line"`)
+		array=$((echo "$line"))
 
 		if [ ${array[0]} == "@" ]; then
 			inDirectory=false
