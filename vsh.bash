@@ -184,18 +184,18 @@ function handle_msg {
 				echo -e -n "$archive\n";;
 			'ls')
 				if [[ $# -eq 4 ]]; then
-					target=$(remove_last_slash "$2")
-					current=$3
-					archive=$4
+					local target=$(remove_last_slash "$2")
+					local current=$3
+					local archive=$4
 				elif [[ $# -eq 3 ]]; then
-					target=''
-					current=$2
-					archive=$3
+					local target=''
+					local current=$2
+					local archive=$3
 				else echo 'Wrong argument number.'
 				fi
 				if [[ $# -eq 4 || $# -eq 3 ]]; then
 					ROOT=$(get_root_path "$archive")
-					path=$(get_full_path "$target" "$current" "$archive")
+					local path=$(get_full_path "$target" "$current" "$archive")
 					if [[ $(check_dir_path "$path" "$archive") == true ]]; then
 						echo "$(list_all "$path" "$current" "$archive")"
 					else echo "Directory $target not found."
@@ -214,9 +214,9 @@ function handle_msg {
 						if [[ $path == '1' ]]; then
 							echo "Wrong path: too many double dots!"
 						elif [[ "$(check_dir_path $path $archive)" == true ]]; then
-							echo "$(sed 's,'"$ROOT"',,' <<< $path)"
+							echo "$(sed 's,^'"$ROOT"',,' <<< $path)"
 						fi
-					else echo "Not a directory"
+					else echo "/.. can not exist!"
 					fi
 				else echo 'Wrong argument number.'
 				fi;;
@@ -228,16 +228,24 @@ function handle_msg {
 					local base=${target##*/}
 					if ! [[ -z $base ]]; then
 						ROOT=$(get_root_path "$archive")
-						local path=$(get_full_path "$(sed 's/\/'"$base"'//' <<< $target)" "$current" "$archive")
-						lines="$(get_file_lines $path $base $archive)"
-						code=$?
-						if [[ $code == 0 ]]; then
-							local start_line=$(cut -d' ' -f1 <<< "$lines")
-							local end_line=$(cut -d' ' -f2 <<< "$lines")
-							echo $(sed -n ${start_line},${end_line}p "$archive_path"/"$archive".arch)
-						elif [[ $code == 2 ]]; then
-							echo ''
-						else echo "File $base not found."
+						local path=$(get_full_path "$target" "$current" "$archive" | sed 's/'"$base"'//')
+						if [[ $current != '/' ]]; then
+							path=$(remove_last_slash "$path")
+						fi
+						if [[ $path == '1' ]]; then
+							echo "Wrong path: too many double dots!"
+						elif [[ "$(check_dir_path $path $archive)" == true ]]; then
+							local lines="$(get_file_lines $path $base $archive)"
+							code=$?
+							if [[ $code == 0 ]]; then
+								local start_line=$(cut -d' ' -f1 <<< "$lines")
+								local end_line=$(cut -d' ' -f2 <<< "$lines")
+								local text=$(sed -n ${start_line},${end_line}p "$archive_path"/"$archive".arch)
+								echo "$text"
+							elif [[ $code == 2 ]]; then
+								echo ''
+							else echo "File $base not found."
+							fi
 						fi
 					else echo "$target: Not a directory"
 					fi
@@ -303,19 +311,18 @@ function get_root_path {
 	OIFS=$IFS
 	unset IFS
 	local body=$(head -n 1 "$archive_path"/"$1".arch)
-	local start="$(cut -d':' -f1 <<< "$body")"
-	local end="$(cut -d':' -f2 <<< "$body")"
-	end=$((end-1))
-	local list=($(sed -n ${start},${end}p "$archive_path"/"$1".arch | grep "^directory" | sed 's/directory //' ))
-	local root="${list[0]}"
-	i=0
-	for element in "${list[@]}"; do
-		if [[ "${#element}" < "${#root}" ]]; then
+	local -i start=$(cut -d':' -f1 <<< "$body")
+	local -i end=$(($(cut -d':' -f2 <<< "$body")-1))
+	local array=($(sed -n ${start},${end}p "$archive_path"/"$1".arch | grep "^directory " | sed 's/directory //'))
+	local root="${array[0]}"
+	for element in "${array[@]}"; do
+		if [[ "${#element}" -lt "${#root}" ]]; then
 			root="$element"
 		fi
 	done
 	echo "$(remove_last_slash "$root")"
 	IFS=$OIFS
+	exit 0
 }
 
 # Return the full path : 1 is the target path, 2 the current location
@@ -344,23 +351,20 @@ function translate_path {
 	IFS='/'
 	local array=($1)
 	local result=$2
-	local i=0
 	for dir in "${array[@]}"; do
-		temp=${array[i]}
-		if [[ $temp == '..' ]]; then
+		if [[ $dir == '..' ]]; then
 			result=$(double_dot "$result")
 			local code=$?
 		else
 			if [[ $result == '/' ]]; then
-				result="/$temp"
-			else result="$result/$temp"
-			fi			
+				result="/$dir"
+			else result="$result/$dir"
+			fi
 		fi
 		if [[ $code == '1' ]]; then
 			echo 1
 			exit 1
 		fi
-		i=$((i+1))
 	done
 	echo "$result"
 	IFS=$OIFS
@@ -368,14 +372,14 @@ function translate_path {
 }
 
 
-# Return the new current path (1:target)
+# Return the new current path (1:current_path)
 function double_dot {
-	result="$1"
+	local result="$1"
 	if [[ $result == '/' ]]; then
 		echo 1
 		exit 1
 	else
-		base=$(basename "$result")
+		local base=$(basename "$result")
 		result=$(sed 's,\/'"$base"',,' <<< "$result")
 	fi
 	if [[ -z $result ]]; then
@@ -417,11 +421,9 @@ function check_dir_path {
 # 1 is the full path, 2 is the current path and 3 is the archive name
 function list_all {
 	local body=$(head -n 1 "$archive_path"/"$3".arch)
-	local start="$(cut -d':' -f1 <<< "$body")"
-	local end="$(cut -d':' -f2 <<< "$body")"
-	end=$((end-1))
-	line=$(sed -n ${start},${end}p "$archive_path"/"$3".arch | grep -n "^directory $1$" | cut -d':' -f1)
-	line=$((line+start))
+	local -i start=$(cut -d':' -f1 <<< "$body")
+	local -i end=$(($(cut -d':' -f2 <<< "$body")-1))
+	start=$(($(sed -n ${start},${end}p "$archive_path"/"$3".arch | grep -n "^directory $1$" | cut -d':' -f1)+start))
 	i=0
 	while read line; do
 		if [[ $line == "@" ]]; then
@@ -430,15 +432,15 @@ function list_all {
 			array[i]="$line"
 			i=$((i+1))
 		fi
-	done < <(tail -n "+$line" "$archive_path"/"$3".arch)
+	done < <(tail -n "+$start" "$archive_path"/"$3".arch)
 	i=0
-	for line in "${array[@]}"; do
-		properties="$(cut -d' ' -f2 <<< "$line")"
+	for element in "${array[@]}"; do
+		properties="$(cut -d' ' -f2 <<< "$element")"
 		if [[ "${properties:0:1}" == 'd' ]]; then
-			result[i]="$(cut -d' ' -f1 <<< "$line")/"
+			result[i]="$(cut -d' ' -f1 <<< "$element")/"
 		elif ! [[ -z "$(grep 'x' <<< "$properties")" ]]; then
-			result[i]="$(cut -d' ' -f1 <<< "$line")*"
-		else result[i]="$(cut -d' ' -f1 <<< "$line")"
+			result[i]="$(cut -d' ' -f1 <<< "$element")*"
+		else result[i]="$(cut -d' ' -f1 <<< "$element")"
 		fi
 		i=$((i+1))
 	done
