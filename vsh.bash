@@ -161,7 +161,7 @@ function start_server {
 	echo 'Launching server...'
 	rm -f /tmp/serverFifo
 	mknod /tmp/serverFifo p
-	$server 0</tmp/serverFifo | handle_msg 1>/tmp/serverFifo
+	$server 0</tmp/serverFifo | handle_msg 1>/tmp/serverFifo &
 	echo "Server is now listening on port $1."
 }
 
@@ -243,10 +243,51 @@ function handle_msg {
 					fi
 				else echo 'Wrong argument number.'
 				fi;;
+			'rm')
+				if [[ $# == 5 ]]; then
+					if [[ $2 == "-r" ]]; then
+						local target=$3
+						local current=$4
+						local archive=$5
+						local path=$(get_full_path '' "$current")
+						echo "Recursive"
+					else
+						echo "Unknown option ($2)."
+					fi
+				elif [[ $# == 4 ]]; then
+					local target=$2
+					local current=$3
+					local archive=$4
+					local fullpath=$(get_full_path "$target" "$current" "$archive")
+					local path=$(remove_last_slash "$(get_full_path_directory "$fullpath")")
+					local file=$(get_full_path_file "$fullpath")
+					remove_file "$path" "$file" "$archive"
+				fi;;
 			*)
 				echo 'Unknown command.';;
 		esac
 	done
+}
+
+function remove_file {
+	lines=($(get_file_lines "$1" "$2" "$3"))
+	archive=$(cat "archives/$3.arch")
+	markers=(`echo -e -n "$archive\n" | head -1 | sed -e 's/:/\n/g'`)
+	tree=`echo -e -n "$archive\n" | head -n $((${markers[1]}-1)) | tail -n +$((${lines[2]}+1))`
+	if [[ $((${lines[1]}-${lines[0]})) -ne 0 ]]; then
+		while read -r line; do
+			array=(`echo "$line"`)
+			if [[ ${#array[@]} -eq 5 ]]; then
+				array[3]=$((${array[3]}-(${lines[1]}-${lines[0]}+1)))
+				newLine=$( IFS=" " ; echo "${array[*]}" )
+				sed -i "s/$line/$newLine/g" archives/$3.arch
+			fi
+		done <<< "$tree"
+		sed -i "${lines[0]},${lines[1]}d" archives/$3.arch
+	fi
+	sed -i "${lines[2]}d" archives/$3.arch
+	sed -i "s/${markers[0]}:${markers[1]}/${markers[0]}:$((${markers[1]}-1))/g" archives/$3.arch
+	echo "File $2 removed."
 }
 
 # Ensure that there is no slash at the end of path by removing them
@@ -345,7 +386,23 @@ function double_dot {
 	exit 0
 }
 
-# Check if the directory path exist : 1 is the directory full path and 2 the archive name
+function get_full_path_directory {
+	(IFS='/'
+	array=($1)
+	unset array[${#array[@]}-1]
+	for folder in ${array[@]}
+	do
+		echo -n "$folder/"
+	done)
+}
+
+function get_full_path_file {
+	(IFS='/'
+	array=($1)
+	echo ${array[${#array[@]}-1]})
+}
+
+# Check if the directory exist : 1 is the directory full path and 2 the archive name
 function check_dir_path {
 	local body=$(head -n 1 "$archive_path"/"$2".arch)
 	local start="$(cut -d':' -f1 <<< "$body")"
@@ -396,6 +453,7 @@ function get_file_lines {
 	end=$((end-1))
 	line=$(sed -n ${start},${end}p "$archive_path"/"$3".arch | grep -n "^directory $1$" | cut -d':' -f1)
 	line=$((line+start))
+	count=$line
 	result=false
 	while read line; do
 		if [[ "$(cut -d' ' -f1 <<< "$line")" == "$2" ]]; then
@@ -403,6 +461,7 @@ function get_file_lines {
 		elif [[ "$line" == '@' ]]; then
 			exit 1
 		fi
+		count=$((count+1))
 	done < <(tail -n "+$line" "$archive_path"/"$3".arch)
 	properties="$(cut -d' ' -f2 <<< "$line")"
 	lines=""
@@ -411,11 +470,12 @@ function get_file_lines {
 		start_line=$((start_line+end))
 		length=$(cut -d' ' -f5 <<< "$line")
 		end_line=$((start_line+length-1))
-		lines="$start_line $end_line"
+		lines="$start_line $end_line $count"
 	fi
 	if [[ -z $lines ]]; then
 		exit 1
 	elif [[ $length == 0 ]]; then
+		echo "0 0 $count"
 		exit 2
 	else echo "$lines"
 	fi
@@ -442,7 +502,7 @@ function stop_server {
 
 # Send message to the server and return the response.
 function send_msg {
-	echo "$(nc.openbsd -q 1 $destination $port <<< $1)"
+	echo "$(netcat -q 1 $destination $port <<< $1)"
 }
 
 #
@@ -538,6 +598,9 @@ function browse_mode {
 				if ! [[ -z $answer ]]; then
 					echo "$answer"
 				fi;;
+			'rm')
+				answer=$(send_msg "$command $current $file")
+				echo "$answer";;
 			*)
 				answer=$(send_msg "$command $current $file")
 		    		echo "$answer";;
@@ -559,7 +622,7 @@ function main {
 
 	# Check everything
 	check_arguments $@
-	check_config
+	#check_config
 
 	# Let's go
 	execute_command $@
