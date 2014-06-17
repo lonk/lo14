@@ -33,11 +33,11 @@ function check_arguments {
 	fi
 	# check arguments syntax
 	if [[ $1 == '-list' || $1 == '-browse' || $1 == '-extract' ]]; then
-		check_ip $2
-		check_port $3
-		ping_server $2 $3
+		check_ip "$2"
+		check_port "$3"
+		ping_server "$2" "$3"
 	else
-		check_port $2
+		check_port "$2"
 	fi
 	# check if a file is specified and if it is available on the server
 	if [[ $1 == '-browse' || $1 == '-extract' ]]; then
@@ -45,7 +45,7 @@ function check_arguments {
 			echo -e "You should specify the archive name.\nType 'vsh -list $2 $3' to display archives present on the server."
 			exit 1
 		else
-			find_archive $2 $3 $4
+			find_archive "$2" "$3" "$4"
 		fi
 	fi
 }
@@ -128,17 +128,17 @@ function check_config {
 # Execute command
 function execute_command {
 	if [[ $1 == '-start' ]]; then
-		start_server $2
+		start_server "$2"
 	elif [[ $1 == '-stop' ]]; then
-		stop_server $2
+		stop_server "$2"
 	else
 		case $1 in
 			'-list')
-				show_list $2 $3;;
+				show_list "$2" "$3";;
 			'-browse')
-				browse_mode $2 $3 $4;;
+				browse_mode "$2" "$3" "$4";;
 			'-extract')
-				extract_mode $2 $3 $4;;
+				extract_mode "$2" "$3" "$4";;
 			*)
 				echo 'Unknown error!'
 				exit 1;;
@@ -161,11 +161,11 @@ function start_server {
 	echo 'Launching server...'
 	rm -f /tmp/serverFifo
 	mknod /tmp/serverFifo p
-	$server 0</tmp/serverFifo | handle_msg 1>/tmp/serverFifo &
+	$server 0</tmp/serverFifo | handle_msg 1>/tmp/serverFifo
 	echo "Server is now listening on port $1."
 }
 
-# Given answer according to the received command
+# Give answer according to the received command (1:command,2:target/current,3:current,4:archive_name,5:previous)
 function handle_msg {
 	while read line; do
 		set -- $line
@@ -173,70 +173,68 @@ function handle_msg {
 			'ping')
 				echo 'Welcome home!';;
 			'find_archive')
-				if [[ -e archives/"$2".arch ]]; then
+				if [[ -e "$archive_path"/"$2".arch ]]; then
 					echo true
 				else echo false
 				fi;;
 			'show_list')
-				echo "$(ls -p archives | grep -v / | grep '.arch$' | sed 's/.arch$//')";;
+				echo "$(ls -p $archive_path | grep -v / | grep '.arch$' | sed 's/.arch$//')";;
 			'extract')
-				archive=`cat archives/test1.arch`
+				archive=`cat "$archive_path"/test1.arch`
 				echo -e -n "$archive\n";;
 			'ls')
-				if [[ $# == 4 ]]; then
-					local target=$(remove_last_slash "$2")
-					local current=$3
-					local archive=$4
-				elif [[ $# == 3 ]]; then
-					local target=''
-					local current=$2
-					local archive=$3
+				if [[ $# -eq 4 ]]; then
+					target=$(remove_last_slash "$2")
+					current=$3
+					archive=$4
+				elif [[ $# -eq 3 ]]; then
+					target=''
+					current=$2
+					archive=$3
 				else echo 'Wrong argument number.'
 				fi
-				if [[ $# == 4 || $# == 3 ]]; then
-					local path=$(get_full_path "$target" "$current" "$archive")
-					if [[ "$(check_path $path $archive)" == true ]]; then
-						echo "$(list_all $path $current $archive)"
+				if [[ $# -eq 4 || $# -eq 3 ]]; then
+					ROOT=$(get_root_path "$archive")
+					path=$(get_full_path "$target" "$current" "$archive")
+					if [[ $(check_dir_path "$path" "$archive") == true ]]; then
+						echo "$(list_all "$path" "$current" "$archive")"
 					else echo "Directory $target not found."
 					fi
 				fi;;			
 			'cd')
-				if [[ $# == 5 ]]; then
+				if [[ $# -eq 5 ]]; then
 					local target=$(remove_last_slash "$2")
-					local current=$3
 					if [[ $target == "-" ]]; then
 						echo "$5"
-					elif [[ $target == ".." ]]; then
-						base="$(basename $current)"
-						base="$(sed 's,'"/$base"',,' <<< $current)"
-						if [[ -z $base ]]; then
-							echo '/'
-						else echo "$base"
-						fi
-					else
+					elif ! [[ $target =~ ^/\.\. ]]; then
+						local current=$3
 						local archive=$4
+						ROOT=$(get_root_path "$archive")
 						local path=$(get_full_path "$target" "$current" "$archive")
-						if [[ "$(check_path $path $archive)" == true ]]; then
-							echo "$(sed 's,'"$(get_root_path $archive)"',,' <<< $path)"
-						else echo "Directory $target not found."
+						if [[ $path == '1' ]]; then
+							echo "Wrong path: too many double dots!"
+						elif [[ "$(check_dir_path $path $archive)" == true ]]; then
+							echo "$(sed 's,'"$ROOT"',,' <<< $path)"
 						fi
+					else echo "Not a directory"
 					fi
 				else echo 'Wrong argument number.'
 				fi;;
 			'cat')
-				if [[ $# == 4 ]]; then
+				if [[ $# -eq 4 ]]; then
 					local target="$2"
 					local current="$3"
 					local archive="$4"
 					local base=${target##*/}
 					if ! [[ -z $base ]]; then
+						ROOT=$(get_root_path "$archive")
 						local path=$(get_full_path "$(sed 's/\/'"$base"'//' <<< $target)" "$current" "$archive")
 						lines="$(get_file_lines $path $base $archive)"
 						code=$?
 						if [[ $code == 0 ]]; then
 							local start_line=$(cut -d' ' -f1 <<< "$lines")
 							local end_line=$(cut -d' ' -f2 <<< "$lines")
-							echo $(sed -n ${start_line},${end_line}p archives/"$archive".arch)
+							echo $(sed -n ${start_line},${end_line}p "$archive_path"/"$archive".arch)
 						elif [[ $code == 2 ]]; then
 							echo ''
 						else echo "File $base not found."
@@ -253,51 +251,107 @@ function handle_msg {
 
 # Ensure that there is no slash at the end of path by removing them
 function remove_last_slash {
-	length="${#1}"
-	length=$((length-1))
-	if [[ "${1:length:1}" == '/' ]]; then
-		echo "${1%?}"
-	else echo $1
+	if [[ $1 != '/' ]]; then
+		echo "$(sed 's/\/$//' <<< "$1")"
+	else echo "$1"
 	fi
 }
 
 # Get the full root path of the archive
 function get_root_path {
-	local body=$(head -n 1 archives/"$1".arch)
+	OIFS=$IFS
+	unset IFS
+	local body=$(head -n 1 "$archive_path"/"$1".arch)
 	local start="$(cut -d':' -f1 <<< "$body")"
 	local end="$(cut -d':' -f2 <<< "$body")"
 	end=$((end-1))
-	list=($(sed -n ${start},${end}p archives/"$1".arch | grep "^directory" | sed 's/directory //' ))
-	result=${list[0]}
+	local list=($(sed -n ${start},${end}p "$archive_path"/"$1".arch | grep "^directory" | sed 's/directory //' ))
+	local root="${list[0]}"
 	i=0
 	for element in "${list[@]}"; do
-		if [[ "${#element}" < "${#result}" ]]; then
-			result=$element
+		if [[ "${#element}" < "${#root}" ]]; then
+			root="$element"
 		fi
 	done
-	echo "$(remove_last_slash "$result")"
+	echo "$(remove_last_slash "$root")"
+	IFS=$OIFS
 }
 
-# Return the directory full path : 1 is the target path, 2 the current location and 3 the archive name
+# Return the full path : 1 is the target path, 2 the current location
 function get_full_path {
-	root=$(get_root_path $3)
 	if [[ -z $1 ]]; then
-		echo "$root$2"
+		local path="$2"
 	elif [[ $1 =~ ^/.* ]]; then
-		echo "$root$1"
+		local path="$1"
 	elif [[ $2 == '/' ]]; then
-		echo "$root/$1"
-	else echo "$root$2/$1"
+		local path="/$1"
+	else
+		local path="$2/$1"
 	fi
+	local path=$(translate_path "$(sed 's/^\///' <<< "$1")" "$2")
+	if [[ $path == '1' ]]; then
+		echo 1
+		exit 1
+	fi
+	echo "$ROOT$path"
+	exit 0
 }
 
-# Check if the directory exist : 1 is the directory full path and 2 the archive name
-function check_path {
-	local body=$(head -n 1 archives/"$2".arch)
+# Read and translate the path without double dots (1:original_path,2:current_path)
+function translate_path {
+	OIFS=$IFS
+	IFS='/'
+	local array=($1)
+	local result=$2
+	local i=0
+	for dir in "${array[@]}"; do
+		temp=${array[i]}
+		if [[ $temp == '..' ]]; then
+			result=$(double_dot "$result")
+			local code=$?
+		else
+			if [[ $result == '/' ]]; then
+				result="/$temp"
+			else result="$result/$temp"
+			fi			
+		fi
+		if [[ $code == '1' ]]; then
+			echo 1
+			exit 1
+		fi
+		i=$((i+1))
+	done
+	echo "$result"
+	IFS=$OIFS
+	exit 0
+}
+
+
+# Return the new current path (1:target)
+function double_dot {
+	result="$1"
+	if [[ $result == '/' ]]; then
+		echo 1
+		exit 1
+	else
+		base=$(basename "$result")
+		result=$(sed 's,\/'"$base"',,' <<< "$result")
+	fi
+	if [[ -z $result ]]; then
+		echo '/'
+	else
+		echo "$result"
+	fi
+	exit 0
+}
+
+# Check if the directory path exist : 1 is the directory full path and 2 the archive name
+function check_dir_path {
+	local body=$(head -n 1 "$archive_path"/"$2".arch)
 	local start="$(cut -d':' -f1 <<< "$body")"
 	local end="$(cut -d':' -f2 <<< "$body")"
 	end=$((end-1))
-	if [[ -z $(sed -n ${start},${end}p archives/"$2".arch | grep "^directory $1$") ]]; then
+	if [[ -z $(sed -n ${start},${end}p "$archive_path"/"$2".arch | grep "^directory $1$") ]]; then
 		echo false
 	else echo true
 	fi
@@ -305,11 +359,11 @@ function check_path {
 
 # 1 is the full path, 2 is the current path and 3 is the archive name
 function list_all {
-	local body=$(head -n 1 archives/"$3".arch)
+	local body=$(head -n 1 "$archive_path"/"$3".arch)
 	local start="$(cut -d':' -f1 <<< "$body")"
 	local end="$(cut -d':' -f2 <<< "$body")"
 	end=$((end-1))
-	line=$(sed -n ${start},${end}p archives/"$3".arch | grep -n "^directory $1$" | cut -d':' -f1)
+	line=$(sed -n ${start},${end}p "$archive_path"/"$3".arch | grep -n "^directory $1$" | cut -d':' -f1)
 	line=$((line+start))
 	i=0
 	while read line; do
@@ -319,7 +373,7 @@ function list_all {
 			array[i]="$line"
 			i=$((i+1))
 		fi
-	done < <(tail -n "+$line" archives/"$3".arch)
+	done < <(tail -n "+$line" "$archive_path"/"$3".arch)
 	i=0
 	for line in "${array[@]}"; do
 		properties="$(cut -d' ' -f2 <<< "$line")"
@@ -336,11 +390,11 @@ function list_all {
 
 # 1 is the full path and 2 is the target file and 3 is the archive name
 function get_file_lines {
-	local body=$(head -n 1 archives/"$3".arch)
+	local body=$(head -n 1 "$archive_path"/"$3".arch)
 	local start="$(cut -d':' -f1 <<< "$body")"
 	local end="$(cut -d':' -f2 <<< "$body")"
 	end=$((end-1))
-	line=$(sed -n ${start},${end}p archives/"$3".arch | grep -n "^directory $1$" | cut -d':' -f1)
+	line=$(sed -n ${start},${end}p "$archive_path"/"$3".arch | grep -n "^directory $1$" | cut -d':' -f1)
 	line=$((line+start))
 	result=false
 	while read line; do
@@ -349,7 +403,7 @@ function get_file_lines {
 		elif [[ "$line" == '@' ]]; then
 			exit 1
 		fi
-	done < <(tail -n "+$line" archives/"$3".arch)
+	done < <(tail -n "+$line" "$archive_path"/"$3".arch)
 	properties="$(cut -d' ' -f2 <<< "$line")"
 	lines=""
 	if [[ "${properties:0:1}" != 'd' ]]; then
@@ -491,20 +545,27 @@ function browse_mode {
 	done
 }
 
-# Declaration of global variables to make life easier
-if [[ $1 == "-list" || $1 == "-browse" || $1 == "-extract" ]]; then
-	destination="$2"
-	port="$3"
-	file="$4"
-elif [[ $1 == "-start" || $1 == "-stop" ]]; then
-	server="ncat -lk localhost $2"
-fi
+# main
+function main {
+	# Declaration of global variables to make life easier
+	if [[ $1 == "-list" || $1 == "-browse" || $1 == "-extract" ]]; then
+		destination="$2"
+		port="$3"
+		file="$4"
+	elif [[ $1 == "-start" || $1 == "-stop" ]]; then
+		archive_path="archives"
+		server="ncat -lk localhost $2"
+	fi
 
-# Check everything
-check_arguments $@
-check_config
+	# Check everything
+	check_arguments $@
+	check_config
 
-# Let's go
-execute_command $@
+	# Let's go
+	execute_command $@
 
+	exit 0
+}
+
+main $@
 exit 0
