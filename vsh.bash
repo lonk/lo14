@@ -251,8 +251,56 @@ function handle_msg {
 						local target=$3
 						local current=$4
 						local archive=$5
-						local path=$(get_full_path '' "$current")
-						echo "Recursive"
+						local path=$(get_full_path "$target" "$current" "$archive")
+						if [[ "$(check_path $path $archive)" == true ]]; then
+							local cArchive=$(cat "archives/$archive.arch")
+							local markers=($(echo -e -n "$cArchive\n" | head -1 | sed -e 's/:/\n/g'))
+							local tree=`echo -e -n "$cArchive\n" | head -n $((${markers[1]}-1)) | tail -n +${markers[0]}`
+							local toDelete=false
+							local removeDirectory=""
+							local nbLine=${markers[0]}
+							local nbMarkers=0
+							local previousLine=""
+							local linesToDelete=()
+							while read -r line; do
+								local array=(`echo "$line"`)
+								if [[ ${array[0]} == 'directory' ]]; then
+									removeDirectory=${array[1]}
+									if [[ "$(is_deletable "$path" "${array[1]}")" == true ]]; then
+										toDelete=true
+										if [[ $previousLine == "@" ]]; then
+											linesToDelete+=("$(($nbLine-1))")
+											nbMarkers=$(($nbMarkers+1))
+										fi
+										linesToDelete+=("$nbLine")
+										nbMarkers=$(($nbMarkers+1))
+									fi
+								elif [[ ${array[0]} == '@' ]]; then
+									toDelete=false
+								elif [[ $toDelete == true ]]; then
+									if [[ ${#array[@]} -eq 3 ]]; then
+										linesToDelete+=("$nbLine")
+										nbMarkers=$(($nbMarkers+1))
+									elif [[ ${#array[@]} -eq 5 ]]; then
+										linesToDelete+=($(remove_file "$removeDirectory" "${array[0]}" "$archive"))
+										nbMarkers=$(($nbMarkers+1))
+									fi
+								elif [[ ${#array[@]} -eq 3 ]]; then
+									toTest="$removeDirectory${array[0]}"
+									if [[ $toTest == $path ]]; then
+										linesToDelete+=("$nbLine")
+										nbMarkers=$(($nbMarkers+1))
+									fi
+								fi
+								nbLine=$(($nbLine+1))
+								previousLine=$line
+							done <<< "$tree"
+							for ((i=${#linesToDelete[@]}-1; i>=0; i--)); do
+								sed -i "${linesToDelete[$i]}d" "archives/$archive.arch"
+							done
+							update_markers "$nbMarkers" "$archive"
+							echo "Directory $target removed."
+						fi
 					else
 						echo "Unknown option ($2)."
 					fi
@@ -263,12 +311,22 @@ function handle_msg {
 					local fullpath=$(get_full_path "$target" "$current" "$archive")
 					local path=$(remove_last_slash "$(get_full_path_directory "$fullpath")")
 					local file=$(get_full_path_file "$fullpath")
-					remove_file "$path" "$file" "$archive"
+					sed -i "$(remove_file "$path" "$file" "$archive")d" "archives/$archive.arch"
+					update_markers "1" "$archive"
+					echo "File $file removed."
 				fi;;
 			*)
 				echo 'Unknown command.';;
 		esac
 	done
+}
+
+function is_deletable {
+	if [[ $2 == *$1* ]]; then
+		echo true
+	else
+		echo false
+	fi
 }
 
 function remove_file {
@@ -287,9 +345,13 @@ function remove_file {
 		done <<< "$tree"
 		sed -i "${lines[0]},${lines[1]}d" archives/$3.arch
 	fi
-	sed -i "${lines[2]}d" archives/$3.arch
-	sed -i "s/${markers[0]}:${markers[1]}/${markers[0]}:$((${markers[1]}-1))/g" archives/$3.arch
-	echo "File $2 removed."
+	echo "${lines[2]}"
+}
+
+function update_markers {
+	archive=$(cat "archives/$2.arch")
+	markers=(`echo -e -n "$archive\n" | head -1 | sed -e 's/:/\n/g'`)
+	sed -i "s/${markers[0]}:${markers[1]}/${markers[0]}:$((${markers[1]}-$1))/g" archives/$2.arch
 }
 
 # Ensure that there is no slash at the end of path by removing them
