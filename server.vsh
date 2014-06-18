@@ -70,22 +70,21 @@ function handle_msg {
 					if ! [[ -z $base ]]; then
 						ROOT=$(get_root_path "$archive")
 						local path=$(get_full_path "$target" "$current" "$archive" | sed 's/'"$base"'//')
-						if [[ $current != '/' ]]; then
-							path=$(remove_last_slash "$path")
-						fi
+						path=$(remove_last_slash "$path")
 						if [[ $path == '1' ]]; then
 							echo "Wrong path: too many double dots!"
 						elif [[ "$(check_dir_path $path $archive)" == true ]]; then
 							local lines="$(get_file_lines $path $base $archive)"
-							local code=$?
-							if [[ $code == 0 ]]; then
+							local -i code=$?
+							if [[ $(cut -d' ' -f4 <<< "$lines") -eq 2 ]]; then
+								echo 'File empty'
+							elif [[ $lines == false ]]; then
+								echo "File $base not found."
+							elif [[ $code -eq 0 ]]; then
 								local start_line=$(cut -d' ' -f1 <<< "$lines")
 								local end_line=$(cut -d' ' -f2 <<< "$lines")
 								local text=$(sed -n ${start_line},${end_line}p "$ARCHIVE"/"$archive".arch)
 								echo "$text"
-							elif [[ $code == 2 ]]; then
-								echo ''
-							else echo "File $base not found."
 							fi
 						fi
 					else echo "$target: Not a directory"
@@ -164,7 +163,7 @@ function handle_msg {
 					local file=$(get_full_path_file "$fullpath")
 					local linesToDelete=$(remove_file "$path" "$file" "$archive")
 					if [[ $linesToDelete -ne false ]]; then
-						sed -i "$(remove_file "$path" "$file" "$archive")d" "archives/$archive.arch"
+						sed -i "$linesToDelete"d "archives/$archive.arch"
 						update_markers "1" "$archive"
 						echo "File $file removed."
 					else
@@ -195,7 +194,7 @@ function remove_file {
 		archive=$(cat "$ARCHIVE/$3.arch")
 		markers=($(echo -e -n "$archive\n" | head -1 | sed -e 's/:/\n/g'))
 		tree=`echo -e -n "$archive\n" | head -n $((${markers[1]}-1)) | tail -n +$((${markers[0]}))`
-		minLine=$((${lines[0]}-${markers[1]}))
+		minLine=$((${lines[0]}-${markers[1]}+1))
 		if [[ $((${lines[1]}-${lines[0]})) -ne 0 ]]; then
 			while read -r line; do
 				array=($(echo $line))
@@ -334,7 +333,7 @@ function check_dir_path {
 	local body=$(head -n 1 "$ARCHIVE"/"$2".arch)
 	local -i start=$(cut -d':' -f1 <<< "$body")
 	local -i end=$(($(cut -d':' -f2 <<< "$body")-1))
-	if [[ -z $(sed -n ${start},${end}p "$ARCHIVE"/"$2".arch | grep "^directory $1$") ]]; then
+	if [[ -z $(sed -n ${start},${end}p "$ARCHIVE"/"$2".arch  | grep "^directory "$1"[/]*$") ]]; then
 		echo false
 	else echo true
 	fi
@@ -345,7 +344,7 @@ function list_all {
 	local body=$(head -n 1 "$ARCHIVE"/"$3".arch)
 	local -i start=$(cut -d':' -f1 <<< "$body")
 	local -i end=$(($(cut -d':' -f2 <<< "$body")-1))
-	start=$(($(sed -n ${start},${end}p "$ARCHIVE"/"$3".arch | grep -n "^directory $1$" | cut -d':' -f1)+start))
+	start=$(($(sed -n ${start},${end}p "$ARCHIVE"/"$3".arch | grep -n "^directory "$1"[/]*$" | cut -d':' -f1)+start))
 	i=0
 	while read line; do
 		if [[ $line == "@" ]]; then
@@ -374,7 +373,7 @@ function get_file_lines {
 	local body=$(head -n 1 "$ARCHIVE/$3.arch")
 	local -i start=$(cut -d':' -f1 <<< "$body")
 	local -i end=$(($(cut -d':' -f2 <<< "$body")-1))
-	start=$(($(sed -n ${start},${end}p "$ARCHIVE/$3.arch" | grep -n "^directory $1\+/$" | cut -d':' -f1)+start))
+	start=$(($(sed -n ${start},${end}p "$ARCHIVE/$3.arch" | grep -n "^directory "$1"[/]*$" | cut -d':' -f1)+start))
 	local -i count=$start
 	while read line; do
 		if [[ "$(cut -d' ' -f1 <<< "$line")" == "$2" ]]; then
@@ -394,10 +393,10 @@ function get_file_lines {
 		lines="$start_line $end_line $count"
 	fi
 	if [[ -z $lines ]]; then
+		echo false
 		exit 1
 	elif [[ $length == 0 ]]; then
-		echo "0 0 $count"
-		exit 2
+		echo "0 0 $count 2"
 	else echo "$lines"
 	fi
 }
