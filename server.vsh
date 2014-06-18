@@ -98,8 +98,9 @@ function handle_msg {
 						local target=$3
 						local current=$4
 						local archive=$5
+						ROOT=$(get_root_path "$archive")
 						local path=$(get_full_path "$target" "$current" "$archive")
-						if [[ "$(check_path $path $archive)" == true ]]; then
+						if [[ "$(check_dir_path $path $archive)" == true ]]; then
 							local cArchive=$(cat "archives/$archive.arch")
 							local markers=($(echo -e -n "$cArchive\n" | head -1 | sed -e 's/:/\n/g'))
 							local tree=`echo -e -n "$cArchive\n" | head -n $((${markers[1]}-1)) | tail -n +${markers[0]}`
@@ -147,6 +148,8 @@ function handle_msg {
 							done
 							update_markers "$nbMarkers" "$archive"
 							echo "Directory $target removed."
+						else
+							echo "Directory $target not found."
 						fi
 					else
 						echo "Unknown option ($2)."
@@ -155,12 +158,18 @@ function handle_msg {
 					local target=$2
 					local current=$3
 					local archive=$4
+					ROOT=$(get_root_path "$archive")
 					local fullpath=$(get_full_path "$target" "$current" "$archive")
 					local path=$(remove_last_slash "$(get_full_path_directory "$fullpath")")
 					local file=$(get_full_path_file "$fullpath")
-					sed -i "$(remove_file "$path" "$file" "$archive")d" "archives/$archive.arch"
-					update_markers "1" "$archive"
-					echo "File $file removed."
+					local linesToDelete=$(remove_file "$path" "$file" "$archive")
+					if [[ $linesToDelete -ne false ]]; then
+						sed -i "$(remove_file "$path" "$file" "$archive")d" "archives/$archive.arch"
+						update_markers "1" "$archive"
+						echo "File $file removed."
+					else
+						echo "File $file not found"
+					fi
 				fi;;
 			*)
 				if [[ -z $1 ]]; then
@@ -182,26 +191,33 @@ function is_deletable {
 
 function remove_file {
 	lines=($(get_file_lines "$1" "$2" "$3"))
-	archive=$(cat "$ARCHIVE/$3.arch")
-	markers=($(echo -e -n "$archive\n" | head -1 | sed -e 's/:/\n/g'))
-	tree=`echo -e -n "$archive\n" | head -n $((${markers[1]}-1)) | tail -n +$((${lines[2]}+1))`
-	if [[ $((${lines[1]}-${lines[0]})) -ne 0 ]]; then
-		while read -r line; do
-			array=$((echo "$line"))
-			if [[ ${#array[@]} -eq 5 ]]; then
-				array[3]=$((${array[3]}-(${lines[1]}-${lines[0]}+1)))
-				newLine=$( IFS=" " ; echo "${array[*]}" )
-				sed -i "s/$line/$newLine/g" "$ARCHIVE/$3.arch"
-			fi
-		done <<< "$tree"
-		sed -i "${lines[0]},${lines[1]}d" "$ARCHIVE/$3.arch"
+	if [[ $lines != false ]]; then
+		archive=$(cat "$ARCHIVE/$3.arch")
+		markers=($(echo -e -n "$archive\n" | head -1 | sed -e 's/:/\n/g'))
+		tree=`echo -e -n "$archive\n" | head -n $((${markers[1]}-1)) | tail -n +$((${markers[0]}))`
+		minLine=$((${lines[0]}-${markers[1]}))
+		if [[ $((${lines[1]}-${lines[0]})) -ne 0 ]]; then
+			while read -r line; do
+				array=($(echo $line))
+				if [[ ${#array[@]} -eq 5 ]]; then
+					if [[ ${array[3]} -gt $minLine ]]; then
+						array[3]=$((${array[3]}-(${lines[1]}-${lines[0]}+1)))
+						newLine=$( IFS=" " ; echo "${array[*]}" )
+						sed -i "s/$line/$newLine/g" "$ARCHIVE/$3.arch"
+					fi
+				fi
+			done <<< "$tree"
+			sed -i "${lines[0]},${lines[1]}d" "$ARCHIVE/$3.arch"
+		fi
+		echo "${lines[2]}"
+	else
+		echo false
 	fi
-	echo "${lines[2]}"
 }
 
 function update_markers {
 	archive=$(cat "archives/$2.arch")
-	markers=$((echo -e -n "$archive\n" | head -1 | sed -e 's/:/\n/g'))
+	markers=($(echo -e -n "$archive\n" | head -1 | sed -e 's/:/\n/g'))
 	sed -i "s/${markers[0]}:${markers[1]}/${markers[0]}:$((${markers[1]}-$1))/g" archives/$2.arch
 }
 
@@ -358,7 +374,7 @@ function get_file_lines {
 	local body=$(head -n 1 "$ARCHIVE/$3.arch")
 	local -i start=$(cut -d':' -f1 <<< "$body")
 	local -i end=$(($(cut -d':' -f2 <<< "$body")-1))
-	start=$(($(sed -n ${start},${end}p "$ARCHIVE/$3.arch" | grep -n "^directory $1$" | cut -d':' -f1)+start))
+	start=$(($(sed -n ${start},${end}p "$ARCHIVE/$3.arch" | grep -n "^directory $1\+/$" | cut -d':' -f1)+start))
 	local -i count=$start
 	while read line; do
 		if [[ "$(cut -d' ' -f1 <<< "$line")" == "$2" ]]; then

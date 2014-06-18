@@ -1,8 +1,8 @@
 #!/bin/bash
-
+set -x
 ####################
 #
-#	SERVER PART
+#	VSH Script
 #
 ####################
 
