@@ -3,28 +3,28 @@
 ####################
 #
 #	CLIENT PART
+#	Description : describe every client-side functions.
 #
 ####################
 
-# Send message to the server and return the response
+# Send message to the server and wait for the response until the end signal. Maximum waiting time : 5s.
+# $1 - message
 function send_msg {
-	local message=$(nc -q 1 "$DESTINATION" "$PORT" <<< "$1")
-	local -i i=0
-	while [[ -z $message && $i -lt 50 ]]; do
-		message=$(nc -q 1 "$DESTINATION" "$PORT" <<< '')
-		i=$((i+1))
-	done
-	echo "$message"
+	while read line; do
+		if [[ $line == 'END' ]]; then
+			break
+		elif [[ $msg != '' ]]; then
+			msg="$msg\n$line"
+		else msg="$line"
+		fi
+	done < <(nc -q 5 "$DESTINATION" "$PORT" <<< "$1")
+	msg="$(echo -e $msg)" # Interpret \n
+	echo "$msg"
 }
 
-# Get and display archives list
+# Get and display archives list of the server
 function show_list {
-	local list=$(send_msg 'show_list')
-	local archive
-	echo "Archives present on the server $DESTINATION:$PORT :"
-	for archive in $list; do
-		echo  $archive
-	done
+	echo -e "Available archives on the server $DESTINATION:$PORT :\n$(send_msg 'show_list')"
 }
 
 # Browse mode
@@ -56,6 +56,8 @@ function browse_mode {
 				clear;;
 			'exit')
 				echo 'See you soon!';;
+			'help')
+				echo -e "archive : display current archive.\ncat [file] : display file content.\ncd [path/-] : change directory.\nclear : clean the console.\nexit : exit browse mode.\nextract [archive] : extract the archive.\nls [path] : display directory content.\npwd : display current directory.\nrm [-r] [file/directory] : remove file or directory.\nshow_list : display archives list.\nswitch [archive] : switch to another archive";;
 			'ls')
 				answer=$(send_msg "$command $current $ARCHIVE")
 				if ! [[ -z $answer ]]; then
@@ -84,23 +86,23 @@ function browse_mode {
 
 # extract the specified archive on the client computer
 function extract_mode {
-	archive=$(send_msg 'extract')
-	markers=($(echo -e -n "$archive\n" | head -1 | sed -e 's/:/\n/g'))
-	tree=`echo -e -n "$archive\n" | head -n $((${markers[1]}-1)) | tail -n +${markers[0]}`
-	content=`echo -e -n "$archive\n" | tail -n +${markers[1]}`
-	inDirectory=false
-	currentDirectory="./"
+	local archive=$(send_msg "extract $ARCHIVE")
+	local markers=($(echo -e -n "$archive\n" | head -1 | sed -e 's/:/\n/g'))
+	local tree=$(echo -e -n "$archive\n" | head -n $((${markers[1]}-1)) | tail -n +${markers[0]})
+	local content=$(echo -e -n "$archive\n" | tail -n +${markers[1]})
+	local inDirectory=false
+	local currentDirectory="./"
 	while read -r line; do
-		array=$((echo "$line"))
+		local array=($(echo "$line"))
 
-		if [ ${array[0]} == "@" ]; then
+		if [ "${array[0]}" == "@" ]; then
 			inDirectory=false
 		fi
 
 		if [ $inDirectory == true ]; then
-			if [ ${array[1]:0:1} == "d" ]; then
+			if [ "${array[1]:0:1}" == "d" ]; then
 				mkdir -p "$currentDirectory/${array[0]}"
-			elif [ ${array[1]:0:1} == "-" ]; then
+			elif [ "${array[1]:0:1}" == "-" ]; then
 				if [[ -e "$currentDirectory/${array[0]}" ]]; then
 					rm "$currentDirectory/${array[0]}"
 				fi
@@ -132,7 +134,7 @@ function extract_mode {
 			done
 		fi 
 
-		if [ ${array[0]} == "directory" ]; then
+		if [ "${array[0]}" == "directory" ]; then
 			inDirectory=true
 			mkdir -p ${array[1]}
 			currentDirectory=${array[1]}

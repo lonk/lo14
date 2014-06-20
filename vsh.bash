@@ -1,5 +1,5 @@
 #!/bin/bash
-set -x
+
 ####################
 #
 #	VSH Script
@@ -8,28 +8,28 @@ set -x
 
 # Include all source files
 source common.vsh
-source server.vsh
 source client.vsh
 
 # Launch the server on the specified port
 function start_server {
-	if ! [[ -z $(pgrep -f -x "$SERVER") ]]; then
+	if ! [[ -z $(pgrep -f -x "$SERVER $SCRIPT") ]]; then
 		echo "Server already running on port $1."
 		exit 1
 	else 
 		echo 'Launching server...'
 		rm -f /tmp/serverFifo
 		mknod /tmp/serverFifo p
-		$SERVER 0</tmp/serverFifo | handle_msg 1>/tmp/serverFifo &
+		#$SERVER 0</tmp/serverFifo | handle_msg 1>/tmp/serverFifo &
+		$SERVER "$SCRIPT" &
 		echo "Server is now listening on port $1."
 	fi
 }
 
 # Stop the server according to the specified port
 function stop_server {
-	if ! [[ -z $(pgrep -f -x "$SERVER") ]]; then
+	if ! [[ -z $(pgrep -f -x "$SERVER $SCRIPT") ]]; then
 		echo "Stopping server listening on port $1..."
-		pkill -f -x "$SERVER"
+		pkill -f -x "$SERVER $SCRIPT"
 		rm -f /tmp/serverFifo
 		echo 'Server stopped!'
 	else
@@ -51,7 +51,8 @@ function main {
 		else
 			ARCHIVE="archives"
 		fi
-		SERVER="ncat -lk localhost $2"
+		SCRIPT="server.vsh $ARCHIVE"
+		SERVER="ncat -lk localhost 1337 -e"
 	fi
 
 	# Check everything

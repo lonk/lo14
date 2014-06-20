@@ -146,7 +146,7 @@ function execute_command {
 			'-browse')
 				browse_mode;;
 			'-extract')
-				extract_mode "$2" "$3" "$4";;
+				extract_mode;;
 			*)
 				echo 'Fatal error!'
 				exit 1;;

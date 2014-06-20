@@ -3,6 +3,7 @@
 ####################
 #
 #	SERVER PART
+#	Description : this script is execute to handle client message. Each message will be handle from a different process, this is part of Ncat's multiple connections support.
 #
 ####################
 
@@ -21,8 +22,7 @@ function handle_msg {
 			'show_list')
 				echo "$(ls -p $ARCHIVE | grep -v / | grep '.arch$' | sed 's/.arch$//')";;
 			'extract')
-				archive=`cat "$ARCHIVE"/test1.arch`
-				echo -e -n "$archive\n";;
+				echo "$(cat $ARCHIVE/$2.arch)";;
 			'ls')
 				if [[ $# -eq 4 ]]; then
 					local target=$(remove_last_slash "$2")
@@ -83,8 +83,7 @@ function handle_msg {
 							elif [[ $code -eq 0 ]]; then
 								local start_line=$(cut -d' ' -f1 <<< "$lines")
 								local end_line=$(cut -d' ' -f2 <<< "$lines")
-								local text=$(sed -n ${start_line},${end_line}p "$ARCHIVE"/"$archive".arch)
-								echo "$text"
+								echo "$(sed -n ${start_line},${end_line}p "$ARCHIVE"/"$archive".arch)"
 							fi
 						fi
 					else echo "$target: Not a directory"
@@ -167,7 +166,7 @@ function handle_msg {
 						update_markers "1" "$archive"
 						echo "File $file removed."
 					else
-						echo "File $file not found"
+						echo "File $file not found."
 					fi
 				fi;;
 			*)
@@ -177,6 +176,7 @@ function handle_msg {
 					echo 'Unknown command.'
 				fi;;
 		esac
+		echo "END"
 	done
 }
 
@@ -400,3 +400,7 @@ function get_file_lines {
 	else echo "$lines"
 	fi
 }
+
+ARCHIVE=$1
+handle_msg
+exit 0
