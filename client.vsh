@@ -10,28 +10,29 @@
 # Send message to the server and wait for the response until the end signal. Maximum waiting time : 5s.
 # $1 - message
 function send_msg {
+	local msg
+	local line
 	while read line; do
-		if [[ $line == 'END' ]]; then
+		if [[ "$line" == 'END' ]]; then
 			break
-		elif [[ $msg != '' ]]; then
-			msg="$msg\n$line"
-		else msg="$line"
+		else
+			msg="$msg$line\n"
 		fi
 	done < <(nc -q 5 "$DESTINATION" "$PORT" <<< "$1")
-	msg="$(echo -e $msg)" # Interpret \n
-	echo "$msg"
+	echo "$(echo -e -n $msg)" # interpret \n but not the last one
 }
 
-# Get and display archives list of the server
+# Get and display archives list of the server.
 function show_list {
 	echo -e "Available archives on the server $DESTINATION:$PORT :\n$(send_msg 'show_list')"
 }
 
-# Browse mode
+# Browse mode : browsing a remote archive using common linux command such as cd, ls, pwd, rm, etc.
+# $ARCHIVE - archive specified with the option -browse
 function browse_mode {
 	local previous='/'
 	local current='/'
-	local command=''
+	local command
 	local answer
 	while [[ $1 != "exit" ]]; do
 		echo -n "vsh:$current\$ "
@@ -39,7 +40,7 @@ function browse_mode {
 		set -- $command
 		case $1 in
 			'archive')
-				echo "$ARCHIVE";;
+				echo "You are browsing '$ARCHIVE'.";;
 			'cat')
 				answer=$(send_msg "$command $current $ARCHIVE")
 				if ! [[ -z $answer ]]; then
@@ -48,16 +49,18 @@ function browse_mode {
 			'cd')
 				answer=$(send_msg "$command $current $ARCHIVE $previous")
 				if [[ $answer =~ ^/.* ]]; then
-					previous=$current
-					current=$answer
+					previous="$current"
+					current="$answer"
 				else echo "$answer"
 				fi;;
 			'clear')
 				clear;;
 			'exit')
 				echo 'See you soon!';;
+			'extract')
+				extract_mode;;
 			'help')
-				echo -e "archive : display current archive.\ncat [file] : display file content.\ncd [path/-] : change directory.\nclear : clean the console.\nexit : exit browse mode.\nextract [archive] : extract the archive.\nls [path] : display directory content.\npwd : display current directory.\nrm [-r] [file/directory] : remove file or directory.\nshow_list : display archives list.\nswitch [archive] : switch to another archive";;
+				echo -e "archive : display current archive.\ncat [file] : display file content.\ncd [path/-] : change directory.\nclear : clean the console.\nexit : exit browse mode.\nextract : extract the current archive.\nls [path] : display directory content.\npwd : display current directory.\nrm [-r] [file/directory] : remove file or directory.\nshow_list : display archives list.\nswitch [archive] : switch to another archive.";;
 			'ls')
 				answer=$(send_msg "$command $current $ARCHIVE")
 				if ! [[ -z $answer ]]; then
@@ -71,20 +74,24 @@ function browse_mode {
 			'switch')
 				answer=$(send_msg "find_archive $2")
 				if [[ $answer == false ]]; then
-					echo "$2 does not exist."
+					echo "Archive '$2' does not exist!"
 				else
-					ARCHIVE=$2
+					echo "Switch from '$ARCHIVE' to '$2'."
+					ARCHIVE="$2"
 					current='/'
 					previous='/'
 				fi;;
 			*)
 				answer=$(send_msg "$command $current $ARCHIVE")
-		    		echo "$answer";;
+				if ! [[ -z $answer ]]; then
+		    			echo "$answer"
+				fi;;
 		esac
 	done
 }
 
-# extract the specified archive on the client computer
+# Extract the specified archive on the client computer.
+# $ARCHIVE - archive specified with option -extract or actually browsing in browse mode
 function extract_mode {
 	local archive=$(send_msg "extract $ARCHIVE")
 	local markers=($(echo -e -n "$archive\n" | head -1 | sed -e 's/:/\n/g'))
@@ -140,4 +147,5 @@ function extract_mode {
 			currentDirectory=${array[1]}
 		fi
 	done <<< "$tree"
+	echo "Archive '$ARCHIVE' has been successfully extracted."
 }

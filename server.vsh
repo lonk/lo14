@@ -3,11 +3,16 @@
 ####################
 #
 #	SERVER PART
-#	Description : this script is execute to handle client message. Each message will be handle from a different process, this is part of Ncat's multiple connections support.
+#	Description : this script handle client message. Each message will be handle from a different process, this is part of Ncat's multiple connections support.
 #
 ####################
 
-# Give answer according to the received command (1:command,2:target/current,3:current,4:archive_name,5:previous)
+# Give an answer according to the received command.
+# $1 - command
+# $2 - target/current directory
+# $3 - current directory
+# $4 - archive name
+# $5 - previous directory
 function handle_msg {
 	while read line; do
 		set -- $line
@@ -101,7 +106,7 @@ function handle_msg {
 						if [[ "$(check_dir_path $path $archive)" == true ]]; then
 							local cArchive=$(cat "archives/$archive.arch")
 							local markers=($(echo -e -n "$cArchive\n" | head -1 | sed -e 's/:/\n/g'))
-							local tree=`echo -e -n "$cArchive\n" | head -n $((${markers[1]}-1)) | tail -n +${markers[0]}`
+							local tree=$(echo -e -n "$cArchive\n" | head -n $((${markers[1]}-1)) | tail -n +${markers[0]})
 							local toDelete=false
 							local removeDirectory=""
 							local nbLine=${markers[0]}
@@ -170,16 +175,15 @@ function handle_msg {
 					fi
 				fi;;
 			*)
-				if [[ -z $1 ]]; then
-					echo -n ''
-				else
+				if [[ $# -gt 2 ]]; then
 					echo 'Unknown command.'
 				fi;;
 		esac
-		echo "END"
+		echo 'END'
 	done
 }
 
+# Check if the line has to be removed.
 function is_deletable {
 	if [[ $2 == *$1* ]]; then
 		echo true
@@ -188,6 +192,7 @@ function is_deletable {
 	fi
 }
 
+# Remove a file from an archive.
 function remove_file {
 	lines=($(get_file_lines "$1" "$2" "$3"))
 	if [[ $lines != false ]]; then
@@ -214,13 +219,15 @@ function remove_file {
 	fi
 }
 
+# Update markers in the header of a specified archive.
 function update_markers {
 	archive=$(cat "archives/$2.arch")
 	markers=($(echo -e -n "$archive\n" | head -1 | sed -e 's/:/\n/g'))
 	sed -i "s/${markers[0]}:${markers[1]}/${markers[0]}:$((${markers[1]}-$1))/g" archives/$2.arch
 }
 
-# Ensure that there is no slash at the end of path by removing them
+# Ensure that there is no slash at the end of path by removing them.
+# $1 - the path
 function remove_last_slash {
 	if [[ $1 != '/' ]]; then
 		echo "$(sed 's/\/$//' <<< "$1")"
@@ -228,7 +235,8 @@ function remove_last_slash {
 	fi
 }
 
-# Get the full root path of the archive
+# Get the full root path of the archive.
+# $1 - archive name
 function get_root_path {
 	OIFS=$IFS
 	unset IFS
@@ -246,7 +254,9 @@ function get_root_path {
 	IFS=$OIFS
 }
 
-# Return the full path : 1 is the target path, 2 the current location
+# Return the full path.
+# $1 - target path
+# $2 - current directory
 function get_full_path {
 	if [[ -z $1 ]]; then
 		local path="$2"
@@ -265,7 +275,9 @@ function get_full_path {
 	echo "$ROOT$path"
 }
 
-# Read and translate the path without double dots (1:original_path,2:current_path)
+# Read and translate the path without double dots.
+# $1 - original path
+# $2 - current directory
 function translate_path {
 	OIFS=$IFS
 	IFS='/'
@@ -291,7 +303,8 @@ function translate_path {
 }
 
 
-# Return the new current path (1:current_path)
+# Return the new current directory (parent).
+# $1 - current directory
 function double_dot {
 	local result="$1"
 	if [[ $result == '/' ]]; then
@@ -328,7 +341,9 @@ function get_full_path_file {
 	IFS=$OIFS
 }
 
-# Check if the directory exist : 1 is the directory full path and 2 the archive name
+# Check if the directory of path exist. Only used after get_full_path !
+# $1 - directory full path
+# $2 - archive name
 function check_dir_path {
 	local body=$(head -n 1 "$ARCHIVE"/"$2".arch)
 	local -i start=$(cut -d':' -f1 <<< "$body")
@@ -339,7 +354,10 @@ function check_dir_path {
 	fi
 }
 
-# Return the list of folder and file of the full path (1:full_path,2:current_dir,3:archive_name)
+# Return the list of folder and file of the specified location.
+# $1 - full path
+# $2 - current directory
+# $3 - archive name
 function list_all {
 	local body=$(head -n 1 "$ARCHIVE"/"$3".arch)
 	local -i start=$(cut -d':' -f1 <<< "$body")
@@ -368,7 +386,10 @@ function list_all {
 	echo "${result[@]}"
 }
 
-# Return the start_line and end_line of specified file (1:full_path,2:target_file,3:archive_name)
+# Return the starting line and ending line of specified file.
+# $1 - full path
+# $2 - target file
+# $3 - archive name
 function get_file_lines {
 	local body=$(head -n 1 "$ARCHIVE/$3.arch")
 	local -i start=$(cut -d':' -f1 <<< "$body")
@@ -401,6 +422,7 @@ function get_file_lines {
 	fi
 }
 
+# Launch another proccess to handle msg from client
 ARCHIVE=$1
 handle_msg
 exit 0

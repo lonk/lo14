@@ -6,30 +6,30 @@
 #
 ####################
 
-# Include all source files
+# Include all source files.
 source common.vsh
 source client.vsh
 
-# Launch the server on the specified port
+# Launch the server on the specified port.
 function start_server {
-	if ! [[ -z $(pgrep -f -x "$SERVER $SCRIPT") ]]; then
+	if ! [[ -z $(pgrep -lf "$SERVER") ]]; then
 		echo "Server already running on port $1."
 		exit 1
 	else 
 		echo 'Launching server...'
 		rm -f /tmp/serverFifo
 		mknod /tmp/serverFifo p
-		#$SERVER 0</tmp/serverFifo | handle_msg 1>/tmp/serverFifo &
 		$SERVER "$SCRIPT" &
 		echo "Server is now listening on port $1."
 	fi
 }
 
-# Stop the server according to the specified port
+# Stop the server according to the specified port.
 function stop_server {
-	if ! [[ -z $(pgrep -f -x "$SERVER $SCRIPT") ]]; then
+	local test=$(pgrep -lf "$SERVER" | cut -d' ' -f1)
+	if ! [[ -z $test ]]; then
 		echo "Stopping server listening on port $1..."
-		pkill -f -x "$SERVER $SCRIPT"
+		kill $test
 		rm -f /tmp/serverFifo
 		echo 'Server stopped!'
 	else
@@ -38,7 +38,7 @@ function stop_server {
 	fi
 }
 
-# main function
+# Main function.
 function main {
 	# Declaration of global variables to make life easier
 	if [[ $1 == "-list" || $1 == "-browse" || $1 == "-extract" ]]; then
@@ -52,12 +52,12 @@ function main {
 			ARCHIVE="archives"
 		fi
 		SCRIPT="server.vsh $ARCHIVE"
-		SERVER="ncat -lk localhost 1337 -e"
+		SERVER="ncat -lk localhost 1337 -e" # -e option makes multiples connections possible without broadcasting message to everyone
 	fi
 
 	# Check everything
 	check_arguments "$@"
-	#check_config
+	#check_config # Disable to avoid cross-platform problem
 
 	# Let's go
 	execute_command "$@"
