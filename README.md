@@ -4,12 +4,14 @@
 
 * To start a server :
 <pre>
-	./vsh.bash -start [destination] [port]
+	./vsh.bash -start [destination]* [port] [archive_directory]*
 </pre>
 * To stop a server :
 <pre>
-	./vsh.bash -stop [destination] [port]
+	./vsh.bash -stop [destination]* [port]
 </pre>
+
+*: optional.
 
 ### Client connection
 
