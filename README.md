@@ -4,29 +4,28 @@
 
 * To start a server :
 <pre>
-	./vsh.bash -start <destination> <port>
+	./vsh.bash -start <<destination>> <<port>>
 </pre>
 * To stop a server :
 <pre>
-	./vsh.bash -stop localhost 1337
+	./vsh.bash -stop <<destination>> <<port>>
 </pre>
 
 ### Client connection
 
 * To display the archives available on a server :
 <pre>
-	./vsh.bash -list <destination> <port>
+	./vsh.bash -list <<destination>> <<port>>
 </pre>
 * To browse an archive :
 <pre>
-	./vsh.bash -browse <destination> <port> <archive_name>
+	./vsh.bash -browse <<destination>> <<port>> <<archive_name>>
 </pre>
 * To extract an archive on your computer :
 <pre>
-	./vsh.bash -extract <destination> <port> <archive_name>
+	./vsh.bash -extract <<destination>> <<port>> <<archive_name>>
 </pre>
 
 ### Using browse mode
 
-While using browse mode, there is a lot of linux-like command such as cd, ls, pwd, rm, etc.
-Type help to show them all.
+While using browse mode, there is a lot of linux-like command such as cd, ls, pwd, rm, etc. Type help to show them all.
